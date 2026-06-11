@@ -22,10 +22,28 @@
     nextYearButton: document.getElementById("nextYearButton"),
     currencySelect: document.getElementById("currencySelect"),
     correspondentBankSelect: document.getElementById("correspondentBankSelect"),
+    calculateButton: document.getElementById("calculateReplenishmentButton"),
     submitButton: document.getElementById("submitReplenishmentButton"),
+    eightyAmountInput: document.getElementById("eightyAmountInput"),
+    eightyReferenceInput: document.getElementById("eightyReferenceInput"),
+    eightyDateInput: document.getElementById("eightyDateInput"),
+    eightyRegisteredAmountInput: document.getElementById("eightyRegisteredAmountInput"),
+    eightyCorrespondentBankInput: document.getElementById("eightyCorrespondentBankInput"),
+    eightyCoverageInput: document.getElementById("eightyCoverageInput"),
+    hundredAmountInput: document.getElementById("hundredAmountInput"),
+    hundredReferenceInput: document.getElementById("hundredReferenceInput"),
+    hundredDateInput: document.getElementById("hundredDateInput"),
+    hundredRegisteredAmountInput: document.getElementById("hundredRegisteredAmountInput"),
+    hundredCorrespondentBankInput: document.getElementById("hundredCorrespondentBankInput"),
+    hundredCoverageInput: document.getElementById("hundredCoverageInput"),
     confirmOverlay: document.getElementById("submitConfirmOverlay"),
+    confirmMessage: document.getElementById("submitConfirmMessage"),
     confirmYes: document.getElementById("confirmSubmitYes"),
     confirmNo: document.getElementById("confirmSubmitNo"),
+    duplicateOverlay: document.getElementById("duplicateReferenceOverlay"),
+    duplicateMessage: document.getElementById("duplicateReferenceMessage"),
+    duplicateMeta: document.getElementById("duplicateReferenceMeta"),
+    duplicateClose: document.getElementById("duplicateReferenceClose"),
     formStatus: document.getElementById("relenishmentsStatus"),
   };
 
@@ -39,6 +57,7 @@
     bankCurrencyMap: new Map(),
     currencyBankMap: new Map(),
     submitting: false,
+    checkingDuplicate: false,
   };
 
   init();
@@ -49,6 +68,7 @@
     bindAmountFormatter();
     bindCurrencyDependentFields();
     setupDatePicker();
+    bindCalculateButton();
     bindSubmitConfirmation();
   }
 
@@ -110,12 +130,15 @@
   function bindCurrencyDependentFields() {
     elements.bankSelect?.addEventListener("change", () => {
       syncBankCurrencyOptions("bank");
+      clearResultFields();
       updateCorrespondentBanks();
     });
     elements.currencySelect?.addEventListener("change", () => {
       syncBankCurrencyOptions("currency");
+      clearResultFields();
       updateCorrespondentBanks();
     });
+    elements.correspondentBankSelect?.addEventListener("change", clearResultFields);
   }
 
   function updateCorrespondentBanks() {
@@ -337,9 +360,9 @@
     return uniqueCleanValues(payload.values);
   }
 
-  function loadGoogleSheetTable(sheetName, range = "A:G") {
+  function loadGoogleSheetTable(sheetName, range = "A:G", options = {}) {
     const cacheKey = `${sheetName}::${range}`;
-    if (state.sheetCache.has(cacheKey)) return Promise.resolve(state.sheetCache.get(cacheKey));
+    if (!options.forceRefresh && state.sheetCache.has(cacheKey)) return Promise.resolve(state.sheetCache.get(cacheKey));
 
     return new Promise((resolve, reject) => {
       const callbackName = `__relenishmentsSheet_${Date.now()}_${Math.random().toString(36).slice(2)}`;
@@ -352,6 +375,7 @@
       url.searchParams.set("sheet", sheetName);
       if (range) url.searchParams.set("range", range);
       url.searchParams.set("tqx", `out:json;responseHandler:${callbackName}`);
+      if (options.forceRefresh) url.searchParams.set("_", String(Date.now()));
 
       window[callbackName] = (response) => {
         cleanup();
@@ -618,6 +642,7 @@
       });
     }
     renderCalendar();
+    clearResultFields();
     if (closeAfterSelect) closeDatePicker();
   }
 
@@ -642,10 +667,304 @@
     return a && b && a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
   }
 
+  function bindCalculateButton() {
+    elements.calculateButton?.addEventListener("click", async () => {
+      if (!validateCalculateFields()) return;
+      await calculatePreviousRows();
+    });
+  }
+
+  function validateCalculateFields() {
+    const requiredFields = [
+      { element: elements.bankSelect, label: "Bank" },
+      { element: elements.dateInput, label: "Date", focusElement: elements.dateTrigger },
+      { element: elements.currencySelect, label: "Currency" },
+      { element: elements.correspondentBankSelect, label: "Correspondent Bank" },
+    ];
+
+    for (const field of requiredFields) {
+      if (String(field.element?.value || "").trim()) continue;
+
+      setStatus(`${field.label} is required`, "error");
+      const focusElement = field.focusElement || field.element;
+      if (focusElement && typeof focusElement.focus === "function") {
+        focusElement.focus();
+      }
+      return false;
+    }
+
+    return true;
+  }
+
+  async function calculatePreviousRows() {
+    clearResultFields();
+    setCalculateBusy(true);
+    setStatus("Finding previous rows", "muted");
+
+    try {
+      const criteria = collectPreviousRowCriteria();
+      const rows = await loadPreviousReplenishmentRows(criteria);
+      if (!rows.eighty && !rows.hundred) {
+        setStatus("No previous rows found", "warning");
+        return;
+      }
+
+      if (rows.eighty) fillEightyFields(rows.eighty);
+      if (rows.hundred) fillHundredFields(rows.hundred);
+
+      if (rows.eighty && rows.hundred) {
+        setStatus(`80% ${rows.eighty.date || ""} / 100% ${rows.hundred.date || ""}`.trim(), "muted");
+      } else if (rows.eighty) {
+        setStatus("80% row loaded; no 100% row found", "warning");
+      } else {
+        setStatus("100% row loaded; no 80% row found", "warning");
+      }
+    } catch (error) {
+      console.error(error);
+      setStatus(error.message || "Previous row lookup failed", "error");
+    } finally {
+      setCalculateBusy(false);
+    }
+  }
+
+  function collectPreviousRowCriteria() {
+    const selectedDate = parseDateValue(requiredFieldValue(elements.dateInput, "Date"));
+    if (!selectedDate) throw new Error("Date is invalid.");
+
+    return {
+      sheet: requiredFieldValue(elements.currencySelect, "Currency"),
+      bank: requiredFieldValue(elements.bankSelect, "Bank"),
+      dateValue: requiredFieldValue(elements.dateInput, "Date"),
+      selectedDate,
+      correspondentBank: requiredFieldValue(elements.correspondentBankSelect, "Correspondent Bank"),
+    };
+  }
+
+  async function loadPreviousReplenishmentRows(criteria) {
+    const readerUrl = getAppsScriptReaderUrl();
+    if (readerUrl) {
+      try {
+        return await loadAppsScriptPreviousRows(readerUrl, criteria);
+      } catch (error) {
+        console.warn("Previous row reader failed; using public sheet fallback.", error);
+      }
+    }
+
+    const table = await loadGoogleSheetTable(criteria.sheet, "A:G", { forceRefresh: true });
+    return findPreviousReplenishmentRows(table, criteria);
+  }
+
+  async function loadAppsScriptPreviousRows(readerUrl, criteria) {
+    let url;
+    try {
+      url = new URL(readerUrl);
+    } catch (error) {
+      throw new Error("Full sheet reader URL is invalid.");
+    }
+
+    url.searchParams.set("action", "previousReplenishment");
+    url.searchParams.set("sheet", criteria.sheet);
+    url.searchParams.set("bank", criteria.bank);
+    url.searchParams.set("date", criteria.dateValue);
+    url.searchParams.set("correspondentBank", criteria.correspondentBank);
+
+    const response = await fetch(url.toString(), {
+      cache: "no-store",
+      mode: "cors",
+    });
+    if (!response.ok) {
+      throw new Error("Previous row request failed.");
+    }
+
+    const payload = await response.json();
+    if (!payload || payload.ok !== true) {
+      throw new Error(payload?.error || "Previous row endpoint is unavailable.");
+    }
+
+    if (payload.rows && typeof payload.rows === "object") {
+      return {
+        eighty: payload.rows.eighty || null,
+        hundred: payload.rows.hundred || null,
+      };
+    }
+
+    if (Object.prototype.hasOwnProperty.call(payload, "row")) {
+      return {
+        eighty: payload.row || null,
+        hundred: null,
+      };
+    }
+
+    throw new Error("Previous row endpoint is unavailable.");
+  }
+
+  function findPreviousReplenishmentRows(table, criteria) {
+    const rows = Array.isArray(table?.rows) ? table.rows : [];
+    const columns = table?.cols || [];
+    const bankColumn = resolveTableColumn(columns, rows, "bank", 0);
+    const amountColumn = resolveTableColumn(columns, rows, "amount", 1);
+    const referenceColumn = resolveTableColumn(columns, rows, "ref no", 2);
+    const dateColumn = resolveTableColumn(columns, rows, "date", 3);
+    const registeredAmountColumn = resolveTableColumn(columns, rows, "registered amount", 4);
+    const correspondentColumn = resolveTableColumn(columns, rows, "correspondent bank", 6);
+
+    if (bankColumn < 0 || dateColumn < 0 || correspondentColumn < 0) {
+      throw new Error("Required sheet columns were not found.");
+    }
+
+    const selectedBank = normalizeComparable(criteria.bank);
+    const selectedCorrespondentBank = normalizeComparable(criteria.correspondentBank);
+    const candidates = [];
+
+    rows.forEach((row, rowIndex) => {
+      if (normalizeComparable(readCellDisplayValue(row, bankColumn)) !== selectedBank) return;
+      if (normalizeComparable(readCellDisplayValue(row, correspondentColumn)) !== selectedCorrespondentBank) return;
+
+      const amount = readCellDisplayValue(row, amountColumn);
+      if (!isPositiveAmount(amount)) return;
+
+      const rowDate = parseSheetDateCell(row?.c?.[dateColumn]);
+      if (!rowDate || rowDate >= criteria.selectedDate) return;
+
+      candidates.push({
+        rowDate,
+        rowIndex,
+        dateKey: dateValue(rowDate),
+        row: {
+          amount,
+          referenceNumber: readCellDisplayValue(row, referenceColumn),
+          date: readCellDisplayValue(row, dateColumn),
+          registeredAmount: readCellDisplayValue(row, registeredAmountColumn),
+          correspondentBank: readCellDisplayValue(row, correspondentColumn),
+        },
+      });
+    });
+
+    const previousRows = selectPreviousRowsByDistinctDate(candidates);
+    return {
+      eighty: previousRows[0] || null,
+      hundred: previousRows[1] || null,
+    };
+  }
+
+  function selectPreviousRowsByDistinctDate(candidates) {
+    const seenDates = new Set();
+    return candidates
+      .sort((left, right) => right.rowDate - left.rowDate || right.rowIndex - left.rowIndex)
+      .filter((candidate) => {
+        if (seenDates.has(candidate.dateKey)) return false;
+        seenDates.add(candidate.dateKey);
+        return true;
+      })
+      .slice(0, 2)
+      .map((candidate) => candidate.row);
+  }
+
+  function isPositiveAmount(value) {
+    const normalized = normalizeSheetAmount(value);
+    return normalized !== "" && Number(normalized) > 0;
+  }
+
+  function normalizeSheetAmount(value) {
+    return String(value || "")
+      .replace(/[\u066c,]/g, "")
+      .replace(/[^\d.-]/g, "")
+      .trim();
+  }
+
+  function resolveTableColumn(columns, rows, headerName, fallbackIndex) {
+    const normalizedHeader = normalizeHeader(headerName);
+    let index = columns.findIndex((column) => normalizeHeader(column?.label || column?.id) === normalizedHeader);
+    if (index >= 0) return index;
+
+    if (rows.length) {
+      const firstRowValues = readRowDisplayValues(rows[0]);
+      index = firstRowValues.findIndex((value) => normalizeHeader(value) === normalizedHeader);
+      if (index >= 0) return index;
+    }
+
+    return fallbackIndex;
+  }
+
+  function readRowDisplayValues(row) {
+    return Array.from(row?.c || []).map((cell) => cellDisplayText(cell));
+  }
+
+  function readCellDisplayValue(row, index) {
+    return cellDisplayText(row?.c?.[index]);
+  }
+
+  function cellDisplayText(cell) {
+    const value = cell?.f ?? cell?.v ?? "";
+    return String(value).trim();
+  }
+
+  function parseSheetDateCell(cell) {
+    const displayValue = cellDisplayText(cell);
+    const rawValue = String(cell?.v ?? "").trim();
+    return parseSheetDate(displayValue) || parseSheetDate(rawValue);
+  }
+
+  function parseSheetDate(value) {
+    const text = String(value || "").trim();
+    if (!text) return null;
+
+    const googleDateMatch = text.match(/^Date\((\d{4}),\s*(\d{1,2}),\s*(\d{1,2})\)$/);
+    if (googleDateMatch) {
+      return startOfDay(new Date(Number(googleDateMatch[1]), Number(googleDateMatch[2]), Number(googleDateMatch[3])));
+    }
+
+    const slashDateMatch = text.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2,4})$/);
+    if (slashDateMatch) {
+      const yearText = slashDateMatch[3];
+      const year = yearText.length === 2 ? Number(`20${yearText}`) : Number(yearText);
+      return startOfDay(new Date(year, Number(slashDateMatch[2]) - 1, Number(slashDateMatch[1])));
+    }
+
+    return null;
+  }
+
+  function fillEightyFields(row) {
+    if (elements.eightyAmountInput) elements.eightyAmountInput.value = row.amount || "";
+    if (elements.eightyReferenceInput) elements.eightyReferenceInput.value = row.referenceNumber || "";
+    if (elements.eightyDateInput) elements.eightyDateInput.value = row.date || "";
+    if (elements.eightyRegisteredAmountInput) elements.eightyRegisteredAmountInput.value = row.registeredAmount || "";
+    if (elements.eightyCorrespondentBankInput) elements.eightyCorrespondentBankInput.value = row.correspondentBank || "";
+    if (elements.eightyCoverageInput) elements.eightyCoverageInput.value = row.coverage || "";
+  }
+
+  function fillHundredFields(row) {
+    if (elements.hundredAmountInput) elements.hundredAmountInput.value = row.amount || "";
+    if (elements.hundredReferenceInput) elements.hundredReferenceInput.value = row.referenceNumber || "";
+    if (elements.hundredDateInput) elements.hundredDateInput.value = row.date || "";
+    if (elements.hundredRegisteredAmountInput) elements.hundredRegisteredAmountInput.value = row.registeredAmount || "";
+    if (elements.hundredCorrespondentBankInput) elements.hundredCorrespondentBankInput.value = row.correspondentBank || "";
+    if (elements.hundredCoverageInput) elements.hundredCoverageInput.value = row.coverage || "";
+  }
+
+  function clearResultFields() {
+    if (elements.eightyAmountInput) elements.eightyAmountInput.value = "";
+    if (elements.eightyReferenceInput) elements.eightyReferenceInput.value = "";
+    if (elements.eightyDateInput) elements.eightyDateInput.value = "";
+    if (elements.eightyRegisteredAmountInput) elements.eightyRegisteredAmountInput.value = "";
+    if (elements.eightyCorrespondentBankInput) elements.eightyCorrespondentBankInput.value = "";
+    if (elements.eightyCoverageInput) elements.eightyCoverageInput.value = "";
+    if (elements.hundredAmountInput) elements.hundredAmountInput.value = "";
+    if (elements.hundredReferenceInput) elements.hundredReferenceInput.value = "";
+    if (elements.hundredDateInput) elements.hundredDateInput.value = "";
+    if (elements.hundredRegisteredAmountInput) elements.hundredRegisteredAmountInput.value = "";
+    if (elements.hundredCorrespondentBankInput) elements.hundredCorrespondentBankInput.value = "";
+    if (elements.hundredCoverageInput) elements.hundredCoverageInput.value = "";
+  }
+
+  function setCalculateBusy(isBusy) {
+    if (elements.calculateButton) elements.calculateButton.disabled = isBusy;
+  }
+
   function bindSubmitConfirmation() {
-    elements.submitButton?.addEventListener("click", () => {
+    elements.submitButton?.addEventListener("click", async () => {
       if (!elements.form?.reportValidity()) return;
-      openSubmitConfirm();
+      await handleSubmitIntent();
     });
     elements.confirmNo?.addEventListener("click", closeSubmitConfirm);
     elements.confirmYes?.addEventListener("click", async () => {
@@ -654,15 +973,212 @@
     elements.confirmOverlay?.addEventListener("click", (event) => {
       if (event.target === elements.confirmOverlay) closeSubmitConfirm();
     });
-    document.addEventListener("keydown", (event) => {
-      if (event.key === "Escape") closeSubmitConfirm();
+    elements.duplicateClose?.addEventListener("click", closeDuplicateReferencePrompt);
+    elements.duplicateOverlay?.addEventListener("click", (event) => {
+      if (event.target === elements.duplicateOverlay) closeDuplicateReferencePrompt();
     });
+    document.addEventListener("keydown", (event) => {
+      if (event.key !== "Escape") return;
+      closeSubmitConfirm();
+      closeDuplicateReferencePrompt();
+    });
+  }
+
+  async function handleSubmitIntent() {
+    if (state.submitting || state.checkingDuplicate) return;
+
+    state.checkingDuplicate = true;
+    setSubmitBusy(true);
+    setStatus("Checking reference", "muted");
+
+    try {
+      const criteria = collectDuplicateCriteria();
+      const result = await checkDuplicateReference(criteria);
+      if (result.duplicate) {
+        showDuplicateReferencePrompt(criteria, result);
+        return;
+      }
+
+      setStatus("Ready", "muted");
+      openSubmitConfirm();
+    } catch (error) {
+      console.error(error);
+      const message = error.message || "Reference check failed. Submission blocked.";
+      setStatus(message, "error");
+      showBlockingPrompt("Reference check failed", message);
+    } finally {
+      state.checkingDuplicate = false;
+      setSubmitBusy(false);
+    }
+  }
+
+  function collectDuplicateCriteria() {
+    return {
+      sheet: requiredFieldValue(elements.currencySelect, "Currency"),
+      bank: requiredFieldValue(elements.bankSelect, "Bank"),
+      referenceNumber: requiredFieldValue(elements.referenceInput, "Reference Number"),
+    };
+  }
+
+  async function checkDuplicateReference(criteria) {
+    const readerUrl = getAppsScriptWriterUrl() || getAppsScriptReaderUrl();
+    if (readerUrl) {
+      try {
+        return await loadAppsScriptDuplicateReference(readerUrl, criteria);
+      } catch (error) {
+        console.warn("Duplicate reference reader failed; using public sheet fallback.", error);
+      }
+    }
+
+    const table = await loadGoogleSheetTable(criteria.sheet, "A:G", { forceRefresh: true });
+    return findDuplicateReference(table, criteria);
+  }
+
+  async function loadAppsScriptDuplicateReference(readerUrl, criteria) {
+    let url;
+    try {
+      url = new URL(readerUrl);
+    } catch (error) {
+      throw new Error("Full sheet reader URL is invalid.");
+    }
+
+    url.searchParams.set("action", "duplicateReplenishment");
+    url.searchParams.set("sheet", criteria.sheet);
+    url.searchParams.set("bank", criteria.bank);
+    url.searchParams.set("referenceNumber", criteria.referenceNumber);
+
+    const response = await fetch(url.toString(), {
+      cache: "no-store",
+      mode: "cors",
+    });
+    if (!response.ok) {
+      throw new Error("Duplicate reference request failed.");
+    }
+
+    const payload = await response.json();
+    if (!payload || payload.ok !== true || !Object.prototype.hasOwnProperty.call(payload, "duplicate")) {
+      throw new Error(payload?.error || "Duplicate reference endpoint is unavailable.");
+    }
+
+    return payload;
+  }
+
+  function findDuplicateReference(table, criteria) {
+    const rows = Array.isArray(table?.rows) ? table.rows : [];
+    const columns = table?.cols || [];
+    const bankColumn = resolveTableColumn(columns, rows, "bank", 0);
+    const referenceColumn = resolveTableColumn(columns, rows, "ref no", 2);
+
+    if (bankColumn < 0 || referenceColumn < 0) {
+      throw new Error("Required sheet columns were not found.");
+    }
+
+    const selectedBank = normalizeComparable(criteria.bank);
+    const selectedReference = normalizeComparable(criteria.referenceNumber);
+
+    for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
+      const row = rows[rowIndex];
+      if (normalizeComparable(readCellDisplayValue(row, bankColumn)) !== selectedBank) continue;
+      if (normalizeComparable(readCellDisplayValue(row, referenceColumn)) !== selectedReference) continue;
+
+      return {
+        ok: true,
+        source: "public-sheet-duplicate-reference",
+        sheet: criteria.sheet,
+        bank: criteria.bank,
+        referenceNumber: criteria.referenceNumber,
+        duplicate: true,
+        row: rowIndex + 2,
+      };
+    }
+
+    return {
+      ok: true,
+      source: "public-sheet-duplicate-reference",
+      sheet: criteria.sheet,
+      bank: criteria.bank,
+      referenceNumber: criteria.referenceNumber,
+      duplicate: false,
+      row: null,
+    };
+  }
+
+  function showDuplicateReferencePrompt(criteria, result) {
+    setStatus("Duplicate reference", "error");
+    openReferencePrompt({
+      title: "Duplicate reference",
+      message: "This reference number already exists for the selected bank. Submission blocked.",
+      items: [
+        { label: "Bank", value: criteria.bank },
+        { label: "Reference", value: criteria.referenceNumber },
+        { label: "Sheet row", value: result.row || "" },
+      ],
+    });
+  }
+
+  function showBlockingPrompt(title, message) {
+    openReferencePrompt({
+      title,
+      message,
+      items: [],
+    });
+  }
+
+  function openReferencePrompt({ title, message, items }) {
+    if (!elements.duplicateOverlay) return;
+
+    const titleElement = document.getElementById("duplicateReferenceTitle");
+    if (titleElement) titleElement.textContent = title || "Submission blocked";
+    if (elements.duplicateMessage) elements.duplicateMessage.textContent = message || "Submission blocked.";
+    renderDuplicateMeta(items || []);
+
+    elements.duplicateOverlay.hidden = false;
+    window.requestAnimationFrame(() => {
+      elements.duplicateClose?.focus();
+    });
+  }
+
+  function renderDuplicateMeta(items) {
+    if (!elements.duplicateMeta) return;
+    elements.duplicateMeta.innerHTML = "";
+
+    for (const item of items) {
+      const value = String(item.value || "").trim();
+      if (!value) continue;
+
+      const row = document.createElement("div");
+      row.className = "duplicate-reference-row";
+
+      const label = document.createElement("span");
+      label.textContent = item.label;
+
+      const text = document.createElement("span");
+      text.textContent = value;
+
+      row.append(label, text);
+      elements.duplicateMeta.append(row);
+    }
+  }
+
+  function closeDuplicateReferencePrompt() {
+    if (!elements.duplicateOverlay || elements.duplicateOverlay.hidden) return;
+    elements.duplicateOverlay.hidden = true;
+    elements.submitButton?.focus();
   }
 
   function openSubmitConfirm() {
     if (!elements.confirmOverlay) return;
+    updateSubmitConfirmMessage();
     elements.confirmOverlay.hidden = false;
     elements.confirmYes?.focus();
+  }
+
+  function updateSubmitConfirmMessage() {
+    if (!elements.confirmMessage) return;
+    const currency = String(elements.currencySelect?.value || "").trim();
+    elements.confirmMessage.textContent = currency
+      ? `This will add the replenishment to the ${currency} sheet.`
+      : "This will add the replenishment to the selected currency sheet.";
   }
 
   function closeSubmitConfirm() {
@@ -691,7 +1207,16 @@
       setStatus(`Submitted to ${response.sheet} row ${response.row}`, "muted");
     } catch (error) {
       console.error(error);
-      setStatus(error.message || "Submit failed", "error");
+      const message = error.message || "Submit failed";
+      setStatus(message, "error");
+      if (/Reference Number already exists/i.test(message)) {
+        closeSubmitConfirm();
+        try {
+          showDuplicateReferencePrompt(collectDuplicateCriteria(), {});
+        } catch (duplicateError) {
+          showBlockingPrompt("Duplicate reference", `${message} Submission blocked.`);
+        }
+      }
     } finally {
       state.submitting = false;
       setSubmitBusy(false);
@@ -745,6 +1270,7 @@
   }
 
   function setSubmitBusy(isBusy) {
+    if (elements.calculateButton) elements.calculateButton.disabled = isBusy;
     if (elements.submitButton) elements.submitButton.disabled = isBusy;
     if (elements.confirmYes) elements.confirmYes.disabled = isBusy;
     if (elements.confirmNo) elements.confirmNo.disabled = isBusy;

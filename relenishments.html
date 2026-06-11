@@ -156,6 +156,10 @@
                   <span>Correspondent Bank</span>
                   <input id="eightyCorrespondentBankInput" name="eightyCorrespondentBank" placeholder="Auto-filled" disabled />
                 </label>
+                <label class="field">
+                  <span>Coverage</span>
+                  <input id="eightyCoverageInput" name="eightyCoverage" placeholder="Auto-filled" disabled />
+                </label>
               </div>
             </section>
 
@@ -185,10 +189,22 @@
                   <span>Correspondent Bank</span>
                   <input id="hundredCorrespondentBankInput" name="hundredCorrespondentBank" placeholder="Auto-filled" disabled />
                 </label>
+                <label class="field">
+                  <span>Coverage</span>
+                  <input id="hundredCoverageInput" name="hundredCoverage" placeholder="Auto-filled" disabled />
+                </label>
               </div>
             </section>
 
             <div class="submit-row">
+              <button class="relenishments-upload-button" id="uploadReplenishmentButton" type="button">
+                <i data-lucide="upload"></i>
+                <span>Upload</span>
+              </button>
+              <button class="relenishments-calculate-button" id="calculateReplenishmentButton" type="button">
+                <i data-lucide="calculator"></i>
+                <span>Calculate</span>
+              </button>
               <button class="relenishments-submit-button" id="submitReplenishmentButton" type="button">
                 <i data-lucide="send"></i>
                 <span>Submit</span>
@@ -200,12 +216,12 @@
     </div>
 
     <div class="confirm-overlay" id="submitConfirmOverlay" hidden>
-      <div class="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="submitConfirmTitle">
+      <div class="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="submitConfirmTitle" aria-describedby="submitConfirmMessage">
         <div class="confirm-icon" aria-hidden="true">
           <i data-lucide="badge-alert"></i>
         </div>
         <h2 id="submitConfirmTitle">Are you sure?</h2>
-        <p>This will add the replenishment to the selected currency sheet.</p>
+        <p id="submitConfirmMessage">This will add the replenishment to the selected currency sheet.</p>
         <div class="confirm-actions">
           <button class="confirm-button confirm-yes" id="confirmSubmitYes" type="button">
             <i data-lucide="check"></i>
@@ -214,6 +230,30 @@
           <button class="confirm-button confirm-no" id="confirmSubmitNo" type="button">
             <i data-lucide="x"></i>
             <span>No</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="confirm-overlay duplicate-overlay" id="duplicateReferenceOverlay" hidden>
+      <div
+        class="confirm-dialog duplicate-dialog"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="duplicateReferenceTitle"
+        aria-describedby="duplicateReferenceMessage"
+      >
+        <div class="confirm-icon duplicate-icon" aria-hidden="true">
+          <i data-lucide="badge-alert"></i>
+        </div>
+        <p class="section-kicker">Submission blocked</p>
+        <h2 id="duplicateReferenceTitle">Duplicate reference</h2>
+        <p id="duplicateReferenceMessage">This reference number already exists for the selected bank.</p>
+        <div class="duplicate-reference-meta" id="duplicateReferenceMeta"></div>
+        <div class="confirm-actions duplicate-actions">
+          <button class="confirm-button duplicate-close" id="duplicateReferenceClose" type="button">
+            <i data-lucide="check"></i>
+            <span>OK</span>
           </button>
         </div>
       </div>

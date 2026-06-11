@@ -270,6 +270,8 @@ a {
     opacity: 0;
   }
 
+  .relenishments-upload-button::after,
+  .relenishments-calculate-button::after,
   .relenishments-submit-button::after {
     animation: none;
     opacity: 0;
@@ -745,6 +747,10 @@ button svg,
   gap: 12px;
 }
 
+.result-section-grid .field:first-child {
+  grid-column: 1 / -1;
+}
+
 .relenishments-form input,
 .relenishments-form select {
   min-height: 50px;
@@ -886,15 +892,57 @@ button svg,
 .submit-row {
   grid-column: 1 / -1;
   display: flex;
+  gap: 12px;
   justify-content: flex-end;
   padding-top: 6px;
 }
 
+.relenishments-upload-button,
+.relenishments-calculate-button,
 .relenishments-submit-button {
   position: relative;
   isolation: isolate;
   min-width: 180px;
   overflow: hidden;
+}
+
+.relenishments-upload-button {
+  border: 1px solid rgba(94, 176, 255, 0.58);
+  background:
+    linear-gradient(135deg, rgba(94, 176, 255, 0.96), rgba(128, 116, 255, 0.86)),
+    rgba(94, 176, 255, 0.8);
+  color: #f7fbff;
+  box-shadow:
+    0 16px 36px rgba(94, 176, 255, 0.22),
+    0 0 0 1px rgba(255, 255, 255, 0.14) inset;
+}
+
+.relenishments-upload-button:hover {
+  box-shadow:
+    0 20px 44px rgba(94, 176, 255, 0.3),
+    0 0 0 1px rgba(255, 255, 255, 0.2) inset;
+  filter: saturate(1.08) brightness(1.04);
+}
+
+.relenishments-calculate-button {
+  border: 1px solid rgba(255, 200, 87, 0.62);
+  background:
+    linear-gradient(135deg, rgba(255, 214, 102, 0.96), rgba(255, 118, 94, 0.86)),
+    rgba(255, 200, 87, 0.8);
+  color: #071018;
+  box-shadow:
+    0 16px 36px rgba(255, 164, 74, 0.22),
+    0 0 0 1px rgba(255, 255, 255, 0.14) inset;
+}
+
+.relenishments-calculate-button:hover {
+  box-shadow:
+    0 20px 44px rgba(255, 200, 87, 0.28),
+    0 0 0 1px rgba(255, 255, 255, 0.2) inset;
+  filter: saturate(1.08) brightness(1.04);
+}
+
+.relenishments-submit-button {
   border: 1px solid rgba(40, 242, 166, 0.55);
   background:
     linear-gradient(135deg, rgba(40, 242, 166, 0.96), rgba(57, 217, 255, 0.88) 52%, rgba(255, 200, 87, 0.88)),
@@ -905,6 +953,8 @@ button svg,
     0 0 0 1px rgba(255, 255, 255, 0.16) inset;
 }
 
+.relenishments-upload-button::after,
+.relenishments-calculate-button::after,
 .relenishments-submit-button::after {
   content: "";
   position: absolute;
@@ -1001,6 +1051,77 @@ button svg,
 .confirm-no {
   background: linear-gradient(135deg, rgba(255, 91, 121, 0.96), rgba(255, 79, 216, 0.8));
   color: #fff6f8;
+}
+
+.duplicate-dialog {
+  border-color: rgba(255, 91, 121, 0.42);
+  background:
+    linear-gradient(135deg, rgba(255, 91, 121, 0.15), rgba(255, 200, 87, 0.1)),
+    rgba(10, 17, 29, 0.97);
+  box-shadow:
+    0 34px 90px rgba(0, 0, 0, 0.48),
+    0 0 0 1px rgba(255, 255, 255, 0.08) inset,
+    0 0 42px rgba(255, 91, 121, 0.18);
+}
+
+.duplicate-dialog .section-kicker {
+  justify-content: center;
+  margin-bottom: 8px;
+  color: var(--amber);
+}
+
+.duplicate-icon {
+  border-color: rgba(255, 91, 121, 0.5);
+  background:
+    linear-gradient(135deg, rgba(255, 91, 121, 0.22), rgba(255, 200, 87, 0.14)),
+    rgba(255, 91, 121, 0.08);
+  color: #ff6d8b;
+}
+
+.duplicate-reference-meta {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 20px;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(5, 12, 22, 0.62);
+  text-align: left;
+}
+
+.duplicate-reference-meta:empty {
+  display: none;
+}
+
+.duplicate-reference-row {
+  display: grid;
+  grid-template-columns: minmax(86px, auto) 1fr;
+  gap: 10px;
+  align-items: baseline;
+  min-width: 0;
+}
+
+.duplicate-reference-row span:first-child {
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.duplicate-reference-row span:last-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-weight: 800;
+}
+
+.duplicate-actions {
+  grid-template-columns: 1fr;
+}
+
+.duplicate-close {
+  background: linear-gradient(135deg, rgba(255, 200, 87, 0.96), rgba(255, 91, 121, 0.86));
+  color: #12070a;
 }
 
 @keyframes submitShine {
@@ -1726,5 +1847,15 @@ td:nth-child(2) {
 
   .result-section-grid {
     grid-template-columns: 1fr;
+  }
+
+  .submit-row {
+    flex-direction: column;
+  }
+
+  .relenishments-upload-button,
+  .relenishments-calculate-button,
+  .relenishments-submit-button {
+    width: 100%;
   }
 }
