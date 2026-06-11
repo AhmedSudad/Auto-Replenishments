@@ -22,6 +22,8 @@
     nextYearButton: document.getElementById("nextYearButton"),
     currencySelect: document.getElementById("currencySelect"),
     correspondentBankSelect: document.getElementById("correspondentBankSelect"),
+    uploadButton: document.getElementById("uploadReplenishmentButton"),
+    workbookInput: document.getElementById("replenishmentWorkbookInput"),
     calculateButton: document.getElementById("calculateReplenishmentButton"),
     submitButton: document.getElementById("submitReplenishmentButton"),
     eightyAmountInput: document.getElementById("eightyAmountInput"),
@@ -56,6 +58,10 @@
     allCurrencies: [],
     bankCurrencyMap: new Map(),
     currencyBankMap: new Map(),
+    manualWorkbookName: "",
+    manualTables: new Map(),
+    uploadWorker: null,
+    uploadRequestId: 0,
     submitting: false,
     checkingDuplicate: false,
   };
@@ -67,6 +73,7 @@
     initializeBankCurrencyOptions();
     bindAmountFormatter();
     bindCurrencyDependentFields();
+    bindManualUpload();
     setupDatePicker();
     bindCalculateButton();
     bindSubmitConfirmation();
@@ -82,7 +89,7 @@
       state.allCurrencies = currencies;
 
       try {
-        const matrix = await loadBankCurrencyMatrix(currencies);
+        const matrix = getManualBankCurrencyMatrix() || (await loadBankCurrencyMatrix(currencies));
         if (matrix.banks.length) {
           state.allBanks = matrix.banks;
           state.bankCurrencyMap = matrix.bankCurrencyMap;
@@ -139,6 +146,151 @@
       updateCorrespondentBanks();
     });
     elements.correspondentBankSelect?.addEventListener("change", clearResultFields);
+  }
+
+  function bindManualUpload() {
+    elements.uploadButton?.addEventListener("click", () => {
+      elements.workbookInput?.click();
+    });
+
+    elements.workbookInput?.addEventListener("change", async (event) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      await loadManualWorkbook(file);
+      elements.workbookInput.value = "";
+    });
+  }
+
+  async function loadManualWorkbook(file) {
+    if (!/\.(xlsx|xlsm)$/i.test(file.name)) {
+      setStatus("Upload an .xlsx or .xlsm workbook", "error");
+      return;
+    }
+
+    state.uploadRequestId += 1;
+    const requestId = state.uploadRequestId;
+    setUploadBusy(true);
+    setStatus("Reading workbook", "muted");
+
+    try {
+      const buffer = await file.arrayBuffer();
+      const worker = createUploadWorker();
+      worker.postMessage(
+        {
+          type: "load",
+          requestId,
+          fileName: file.name,
+          buffer,
+        },
+        [buffer],
+      );
+    } catch (error) {
+      console.error(error);
+      setUploadBusy(false);
+      setStatus(error.message || "Workbook upload failed", "error");
+    }
+  }
+
+  function createUploadWorker() {
+    if (state.uploadWorker) state.uploadWorker.terminate();
+
+    const worker = new Worker("/assets/relenishments-upload-worker.js");
+    state.uploadWorker = worker;
+    worker.addEventListener("message", handleUploadWorkerMessage);
+    worker.addEventListener("error", (event) => {
+      console.error(event);
+      setUploadBusy(false);
+      setStatus(event.message || "Workbook upload failed", "error");
+    });
+    return worker;
+  }
+
+  function handleUploadWorkerMessage(event) {
+    const message = event.data || {};
+    if (message.requestId !== state.uploadRequestId) return;
+
+    if (message.type === "progress") {
+      setStatus(message.text || "Reading workbook", "muted");
+      return;
+    }
+
+    setUploadBusy(false);
+
+    if (message.type === "error") {
+      setStatus(message.error || "Workbook upload failed", "error");
+      return;
+    }
+
+    if (message.type !== "loaded") return;
+
+    state.manualWorkbookName = message.fileName || "";
+    state.manualTables = buildManualTables(message.tables || []);
+    applyManualWorkbookTables();
+    clearResultFields();
+    updateCorrespondentBanks();
+    setStatus(`Workbook loaded: ${state.manualWorkbookName}`, "muted");
+  }
+
+  function buildManualTables(tables) {
+    const mapped = new Map();
+    for (const table of tables) {
+      const name = String(table.name || "").trim();
+      if (!name) continue;
+      mapped.set(normalizeSheetKey(name), {
+        name,
+        rows: rowsToGoogleTableRows(table.rows || []),
+        cols: rowsToGoogleTableColumns(table.rows || []),
+      });
+    }
+    return mapped;
+  }
+
+  function rowsToGoogleTableRows(rows) {
+    return rows.map((row) => ({
+      c: row.map((value) => ({
+        v: String(value ?? "").trim(),
+        f: String(value ?? "").trim(),
+      })),
+    }));
+  }
+
+  function rowsToGoogleTableColumns(rows) {
+    const headers = rows[0] || [];
+    return headers.map((header, index) => ({
+      id: String(index),
+      label: String(header ?? "").trim(),
+    }));
+  }
+
+  function applyManualWorkbookTables() {
+    const matrix = getManualBankCurrencyMatrix();
+    if (!matrix || !matrix.banks.length) return;
+
+    const selectedBank = elements.bankSelect?.value || "";
+    const selectedCurrency = elements.currencySelect?.value || "";
+    state.allBanks = matrix.banks;
+    state.bankCurrencyMap = matrix.bankCurrencyMap;
+    state.currencyBankMap = matrix.currencyBankMap;
+    syncBankCurrencyOptions();
+    if (selectedBank && isOptionAllowed(selectedBank, state.allBanks)) elements.bankSelect.value = selectedBank;
+    if (selectedCurrency && state.allCurrencies.includes(selectedCurrency)) elements.currencySelect.value = selectedCurrency;
+  }
+
+  function getManualBankCurrencyMatrix() {
+    const table = getManualTable(BANK_CURRENCY_SHEET);
+    if (!table || !state.allCurrencies.length) return null;
+    return parseBankCurrencyMatrix(table, state.allCurrencies);
+  }
+
+  function getManualTable(sheetName) {
+    return state.manualTables.get(normalizeSheetKey(sheetName)) || null;
+  }
+
+  function normalizeSheetKey(value) {
+    return String(value || "")
+      .toLowerCase()
+      .replace(/\s+/g, " ")
+      .trim();
   }
 
   function updateCorrespondentBanks() {
@@ -298,6 +450,9 @@
   }
 
   async function loadCorrespondentBankOptions(currency, bankName) {
+    const manualTable = getManualTable(currency);
+    if (manualTable) return extractCorrespondentBanks(manualTable, bankName);
+
     const readerUrl = getAppsScriptReaderUrl();
     if (readerUrl) {
       try {
@@ -741,6 +896,9 @@
   }
 
   async function loadPreviousReplenishmentRows(criteria) {
+    const manualTable = getManualTable(criteria.sheet);
+    if (manualTable) return findPreviousReplenishmentRows(manualTable, criteria);
+
     const readerUrl = getAppsScriptReaderUrl();
     if (readerUrl) {
       try {
@@ -833,7 +991,7 @@
         row: {
           amount,
           referenceNumber: readCellDisplayValue(row, referenceColumn),
-          date: readCellDisplayValue(row, dateColumn),
+          date: previousRowDateDisplay(row, dateColumn, rowDate),
           registeredAmount: readCellDisplayValue(row, registeredAmountColumn),
           correspondentBank: readCellDisplayValue(row, correspondentColumn),
         },
@@ -905,9 +1063,19 @@
     return parseSheetDate(displayValue) || parseSheetDate(rawValue);
   }
 
+  function previousRowDateDisplay(row, dateColumn, rowDate) {
+    const value = readCellDisplayValue(row, dateColumn);
+    if (/^\d{5}(?:\.\d+)?$/.test(value)) return formatDisplayDate(rowDate);
+    return value || formatDisplayDate(rowDate);
+  }
+
   function parseSheetDate(value) {
     const text = String(value || "").trim();
     if (!text) return null;
+
+    if (/^\d{5}(?:\.\d+)?$/.test(text)) {
+      return excelSerialDate(Number(text));
+    }
 
     const googleDateMatch = text.match(/^Date\((\d{4}),\s*(\d{1,2}),\s*(\d{1,2})\)$/);
     if (googleDateMatch) {
@@ -922,6 +1090,17 @@
     }
 
     return null;
+  }
+
+  function excelSerialDate(value) {
+    if (!Number.isFinite(value) || value < 20000 || value > 80000) return null;
+    const utcDate = new Date(Date.UTC(1899, 11, 30) + Math.floor(value) * 86400000);
+    return startOfDay(new Date(utcDate.getUTCFullYear(), utcDate.getUTCMonth(), utcDate.getUTCDate()));
+  }
+
+  function formatDisplayDate(date) {
+    if (!date) return "";
+    return `${date.getDate()}/${date.getMonth() + 1}/${date.getFullYear()}`;
   }
 
   function fillEightyFields(row) {
@@ -1270,10 +1449,17 @@
   }
 
   function setSubmitBusy(isBusy) {
+    if (elements.uploadButton) elements.uploadButton.disabled = isBusy;
     if (elements.calculateButton) elements.calculateButton.disabled = isBusy;
     if (elements.submitButton) elements.submitButton.disabled = isBusy;
     if (elements.confirmYes) elements.confirmYes.disabled = isBusy;
     if (elements.confirmNo) elements.confirmNo.disabled = isBusy;
+  }
+
+  function setUploadBusy(isBusy) {
+    if (elements.uploadButton) elements.uploadButton.disabled = isBusy;
+    if (elements.calculateButton) elements.calculateButton.disabled = isBusy;
+    if (elements.submitButton) elements.submitButton.disabled = isBusy;
   }
 
   function setStatus(text, variant) {

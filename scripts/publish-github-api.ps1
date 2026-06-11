@@ -37,6 +37,10 @@ function Test-IncludedPath {
     return $false
   }
 
+  if ($path -notmatch "/" -and $path -match "\.txt$") {
+    return $false
+  }
+
   if ($path -match "\.(xlsx|xls|xlsm|csv|pdf|log|tmp|bak)$") {
     return $false
   }

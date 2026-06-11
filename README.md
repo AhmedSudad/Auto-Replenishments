@@ -4,7 +4,7 @@ Static browser workspace and Google Apps Script automation for calculating and s
 
 ## What This Project Does
 
-- Opens a browser-based replenishment form at `/relenishments`.
+- Opens a browser-based replenishment form at `/relenishments.html`.
 - Loads bank, currency, and correspondent-bank reference data from Google Sheets.
 - Calculates 80% and 100% replenishment values from the entered balance and cash-in-transit values.
 - Submits approved replenishment rows back to the selected currency sheet through a Google Apps Script web app.
@@ -46,7 +46,7 @@ python -m http.server 8790 --bind 127.0.0.1
 Then open:
 
 ```text
-http://127.0.0.1:8790/relenishments
+http://127.0.0.1:8790/relenishments.html
 ```
 
 ## Google Apps Script Setup
@@ -63,6 +63,22 @@ The browser app needs a deployed Apps Script web app to read full Google Sheet r
 8. Put that URL in `assets/relenishments-config.js` for both `correspondentBankReaderUrl` and `replenishmentWriterUrl`.
 
 More deployment details are in `google-apps-script/README.md`.
+
+## Planned Google Drive Upload Workflow
+
+Future replenishment work should add an Apps Script endpoint for manually uploaded Excel files:
+
+- Root Google Drive folder ID: `1I29dTj90DL6xxwvJvomw2MWPP3MTvPEZ`
+- The folder is expected to contain year, bank, and currency subfolders.
+- The replenishment page upload button should let the user select a downloaded Excel file.
+- The app should infer the target bank/currency folder from the uploaded Excel file name and selected form values, allowing for slight bank-name variations.
+- Apps Script should save the uploaded Excel file into the matching Google Drive bank/currency folder.
+- Apps Script should copy/append the uploaded Excel contents into the large master Google Sheet already present in that same folder.
+- The master Google Sheet will not necessarily contain `master` in its name. On first use, Apps Script should detect it by opening candidate Google Sheets in the folder and choosing the one with the largest used data range.
+- After detection, Apps Script should persist a mapping of `folder ID -> master spreadsheet ID` so future uploads use the saved master directly instead of scanning every file again.
+- If the saved master file is missing or inaccessible, Apps Script should re-run detection and update the mapping.
+
+Recommended mapping storage: a small auditable config Google Sheet, with Apps Script `PropertiesService` as a fallback.
 
 ## Cloudflare Pages Deployment
 
@@ -117,4 +133,4 @@ The script prompts for a GitHub token on your PC. Use a token that can write rep
 
 - `.wrangler/`, dependency folders, local caches, logs, and generated spreadsheet exports are intentionally ignored by Git.
 - Keep production Apps Script URLs and Google Sheet access rules reviewed before publishing the repository.
-- The current static route uses the existing file name `relenishments.html`, so the local and deployed path is `/relenishments`.
+- Local development with `python -m http.server` uses `/relenishments.html`; Cloudflare Pages also rewrites `/relenishments` to that file.

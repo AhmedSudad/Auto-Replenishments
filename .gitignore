@@ -15,6 +15,9 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
+# Local root notes/instructions
+/*.txt
+
 # Local caches and build outputs
 .cache/
 .parcel-cache/
