@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Upload an Excel workbook, unify company names, and download a new workbook with one added unified-name column."
+    />
+    <title>Data Unifying Tool</title>
+    <link rel="stylesheet" href="/assets/styles.css" />
+    <script src="https://unpkg.com/lucide@latest" defer></script>
+    <script src="/assets/app.js" defer></script>
+  </head>
+  <body>
+    <canvas class="ambient-canvas" id="ambientCanvas" aria-hidden="true"></canvas>
+    <a class="page-switcher" href="/relenishments">
+      <svg class="cash-stack-icon" viewBox="0 0 120 82" aria-hidden="true" focusable="false">
+        <path class="cash-side cash-side-left" d="M9 42 44 52v18L9 60Z" />
+        <path class="cash-side cash-side-right" d="M44 52 84 42v18L44 70Z" />
+        <path class="cash-top cash-top-low" d="M9 36 49 24l35 12-40 13Z" />
+        <path class="cash-side cash-side-low" d="M9 36 44 49v12L9 49Z" />
+        <path class="cash-side cash-side-low-right" d="M44 49 84 36v12L44 61Z" />
+        <path class="cash-top cash-top-front" d="M38 40 83 27l29 11-45 14Z" />
+        <path class="cash-side cash-side-front" d="M38 40 67 52v17L38 57Z" />
+        <path class="cash-side cash-side-front-right" d="M67 52 112 38v17L67 69Z" />
+        <path class="cash-top cash-top-high" d="M31 18 76 6l29 11-45 13Z" />
+        <path class="cash-side cash-side-high" d="M31 18 60 30v18L31 36Z" />
+        <path class="cash-side cash-side-high-right" d="M60 30 105 17v18L60 48Z" />
+        <path class="cash-strap cash-strap-high" d="M61 9 75 14 74 42 60 47Z" />
+        <path class="cash-strap cash-strap-front" d="M78 29 91 34 90 62 76 67Z" />
+        <path class="cash-mark" d="M48 24c8-5 21-4 28 2M62 16v21" />
+        <path class="cash-mark cash-mark-front" d="M58 45c7-4 18-4 25 1M69 38v20" />
+      </svg>
+      <span>Relenishments</span>
+    </a>
+
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="header-tools">
+          <div class="credit-line" aria-label="Powered by Ahmed S. Mustafa">
+            <span class="credit-logo" aria-hidden="true">
+              <svg viewBox="0 0 64 64" focusable="false">
+                <path class="bolt-ring" d="M20.5 10.8a24 24 0 1 0 23 0" />
+                <path class="bolt-mark" d="M37 4 18 34h13l-5 26 20-33H33L37 4Z" />
+              </svg>
+            </span>
+            <span class="credit-copy" aria-hidden="true">
+              <span class="credit-word">Powered by</span>
+              <span class="credit-name">Ahmed S. Mustafa</span>
+            </span>
+          </div>
+          <div class="header-actions">
+            <div class="privacy-pill">
+              <i data-lucide="shield-check"></i>
+              <span>Private browser processing</span>
+            </div>
+          </div>
+        </div>
+        <figure class="hero-art">
+          <img src="/assets/data-cleaning-hero-fitted.png" alt="Data Unifying Tool" />
+          <canvas class="hero-flow-canvas" id="heroFlowCanvas" aria-hidden="true"></canvas>
+          <div class="hero-title-glow" aria-hidden="true">
+            <span class="title-reflection title-reflection-left"></span>
+            <span class="title-reflection title-reflection-right"></span>
+          </div>
+          <figcaption class="sr-only">
+            <h1>Data Unifying Tool</h1>
+          </figcaption>
+        </figure>
+      </header>
+
+      <main class="workspace">
+        <section class="panel upload-panel" aria-labelledby="uploadTitle">
+          <div class="panel-header">
+            <div>
+              <p class="section-kicker">Step 1</p>
+              <h2 id="uploadTitle">Upload Workbook</h2>
+            </div>
+            <span class="status-chip" id="loadStatus">Waiting for file</span>
+          </div>
+
+          <label class="drop-zone" id="dropZone" for="fileInput">
+            <input id="fileInput" type="file" accept=".xlsx,.xlsm,.xlsb,.xls" />
+            <span class="drop-icon"><i data-lucide="file-spreadsheet"></i></span>
+            <span class="drop-title">Drop Excel file here or browse</span>
+            <span class="drop-subtitle">Adds a new unified-name column and keeps the source workbook data intact.</span>
+          </label>
+
+          <div class="file-summary" id="fileSummary" hidden>
+            <div>
+              <span class="summary-label">File</span>
+              <strong id="fileName">-</strong>
+            </div>
+            <div>
+              <span class="summary-label">Workbook</span>
+              <strong id="workbookSummary">-</strong>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel config-panel" aria-labelledby="configTitle">
+          <div class="panel-header">
+            <div>
+              <p class="section-kicker">Step 2</p>
+              <h2 id="configTitle">Configure Match</h2>
+            </div>
+            <span class="status-chip muted" id="columnStatus">No column selected</span>
+          </div>
+
+          <div class="form-grid">
+            <label class="field">
+              <span>Sheet</span>
+              <select id="sheetSelect" disabled></select>
+            </label>
+
+            <label class="field">
+              <span>Source column</span>
+              <select id="columnSelect" disabled></select>
+            </label>
+
+            <label class="field">
+              <span>New column name</span>
+              <input id="outputColumnInput" value="Source Column_NEW" disabled />
+            </label>
+
+            <label class="field">
+              <span>Output format</span>
+              <select id="formatSelect" disabled>
+                <option value="upper" selected>Clean uppercase</option>
+                <option value="original">Most common original</option>
+                <option value="title">Clean title case</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="control-row" role="group" aria-label="Matching strictness">
+            <span class="control-label">Matching mode</span>
+            <label class="segmented">
+              <input type="radio" name="mode" value="conservative" />
+              <span>Conservative</span>
+            </label>
+            <label class="segmented">
+              <input type="radio" name="mode" value="balanced" checked />
+              <span>Balanced</span>
+            </label>
+            <label class="segmented">
+              <input type="radio" name="mode" value="aggressive" />
+              <span>Aggressive</span>
+            </label>
+          </div>
+
+          <div class="action-row">
+            <button class="primary-button" id="processButton" type="button" disabled>
+              <i data-lucide="wand-sparkles"></i>
+              <span>Unify Names</span>
+            </button>
+            <button class="secondary-button" id="resetButton" type="button" disabled>
+              <i data-lucide="rotate-ccw"></i>
+              <span>Reset</span>
+            </button>
+          </div>
+        </section>
+
+        <section class="panel progress-panel" aria-labelledby="progressTitle">
+          <div class="panel-header">
+            <div>
+              <p class="section-kicker">Step 3</p>
+              <h2 id="progressTitle">Process & Download</h2>
+            </div>
+            <span class="status-chip muted" id="processStatus">Idle</span>
+          </div>
+
+          <div class="progress-wrap" aria-label="Processing progress">
+            <div class="progress-track">
+              <div class="progress-fill" id="progressFill"></div>
+            </div>
+            <span id="progressText">Upload a workbook to begin.</span>
+          </div>
+
+          <div class="stats-grid" id="statsGrid">
+            <div class="stat">
+              <span>Rows scanned</span>
+              <strong id="statRows">-</strong>
+            </div>
+            <div class="stat">
+              <span>Rows unified</span>
+              <strong id="statUnified">-</strong>
+            </div>
+            <div class="stat">
+              <span>Unique before</span>
+              <strong id="statBefore">-</strong>
+            </div>
+            <div class="stat">
+              <span>Unique after</span>
+              <strong id="statAfter">-</strong>
+            </div>
+          </div>
+
+          <a class="download-button disabled" id="downloadButton" aria-disabled="true">
+            <i data-lucide="download"></i>
+            <span>Download Unified Workbook</span>
+          </a>
+        </section>
+
+        <section class="panel preview-panel" aria-labelledby="previewTitle">
+          <div class="panel-header">
+            <div>
+              <p class="section-kicker">Review</p>
+              <h2 id="previewTitle">Detected Groups</h2>
+            </div>
+            <span class="status-chip muted" id="previewStatus">No results yet</span>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Unified Name</th>
+                  <th>Rows</th>
+                  <th>Detected Variants</th>
+                </tr>
+              </thead>
+              <tbody id="previewBody">
+                <tr>
+                  <td colspan="3" class="empty-row">Results will appear after processing.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>

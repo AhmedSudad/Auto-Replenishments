@@ -1,0 +1,10 @@
+node_modules
+.npm-cache
+.wrangler
+.git
+package.json
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+*.log
+*.previous.png

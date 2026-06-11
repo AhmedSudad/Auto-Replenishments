@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Auto replenishments workspace for calculating and submitting cash replenishment entries."
+    />
+    <title>Auto Replenishments</title>
+    <link rel="stylesheet" href="assets/styles.css" />
+    <script src="https://unpkg.com/lucide@latest" defer></script>
+    <script src="assets/relenishments-config.js" defer></script>
+    <script src="assets/relenishments.js" defer></script>
+  </head>
+  <body class="secondary-page">
+    <a class="page-switcher" href="/data-unifying-tool/">
+      <svg class="data-funnel-icon" viewBox="0 0 96 80" aria-hidden="true" focusable="false">
+        <path class="data-arrow data-arrow-left" d="M24 9v17M14 22l10 11 10-11" />
+        <path class="data-arrow data-arrow-mid" d="M48 4v22M36 22l12 13 12-13" />
+        <path class="data-arrow data-arrow-right" d="M72 9v17M62 22l10 11 10-11" />
+        <path class="data-funnel" d="M19 38h58L56 59v10H40V59L19 38Z" />
+        <circle class="data-dot data-dot-one" cx="48" cy="72" r="4" />
+        <circle class="data-dot data-dot-two" cx="48" cy="62" r="3" />
+      </svg>
+      <span>Data Unifying Tool</span>
+    </a>
+
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="header-tools">
+          <div class="credit-line" aria-label="Powered by Ahmed S. Mustafa">
+            <span class="credit-logo" aria-hidden="true">
+              <svg viewBox="0 0 64 64" focusable="false">
+                <path class="bolt-ring" d="M20.5 10.8a24 24 0 1 0 23 0" />
+                <path class="bolt-mark" d="M37 4 18 34h13l-5 26 20-33H33L37 4Z" />
+              </svg>
+            </span>
+            <span class="credit-copy" aria-hidden="true">
+              <span class="credit-word">Powered by</span>
+              <span class="credit-name">Ahmed S. Mustafa</span>
+            </span>
+          </div>
+          <div class="header-actions">
+            <div class="privacy-pill">
+              <i data-lucide="shield-check"></i>
+              <span>Private browser processing</span>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main class="secondary-workspace">
+        <section class="panel placeholder-panel" aria-labelledby="relenishmentsTitle">
+          <div class="panel-header">
+            <div>
+              <p class="section-kicker">Workspace</p>
+              <h1 id="relenishmentsTitle">Replenishments</h1>
+            </div>
+            <span class="status-chip muted" id="relenishmentsStatus">Loading lists</span>
+          </div>
+
+          <form class="relenishments-form" id="relenishmentsForm" autocomplete="off">
+            <label class="field">
+              <span>Bank</span>
+              <select id="bankSelect" name="bank" disabled required>
+                <option value="">Loading banks</option>
+              </select>
+            </label>
+
+            <label class="field">
+              <span>Amount</span>
+              <input id="amountInput" name="amount" inputmode="decimal" placeholder="0.00" required />
+            </label>
+
+            <label class="field">
+              <span>Reference Number</span>
+              <input id="referenceInput" name="referenceNumber" required />
+            </label>
+
+            <label class="field">
+              <span>Date</span>
+              <input id="dateInput" name="date" type="hidden" required />
+              <div class="date-picker" id="datePicker">
+                <button class="date-trigger" id="dateTrigger" type="button" aria-haspopup="dialog" aria-expanded="false">
+                  <i data-lucide="calendar-days"></i>
+                  <span id="dateDisplay">Select date</span>
+                </button>
+                <div class="date-popover" id="datePopover" role="dialog" aria-label="Choose date" hidden>
+                  <div class="date-popover-header">
+                    <button class="date-nav-button" id="prevYearButton" type="button" aria-label="Previous year">
+                      <i data-lucide="chevrons-left"></i>
+                    </button>
+                    <button class="date-nav-button" id="prevMonthButton" type="button" aria-label="Previous month">
+                      <i data-lucide="chevron-left"></i>
+                    </button>
+                    <strong id="dateMonthLabel"></strong>
+                    <button class="date-nav-button" id="nextMonthButton" type="button" aria-label="Next month">
+                      <i data-lucide="chevron-right"></i>
+                    </button>
+                    <button class="date-nav-button" id="nextYearButton" type="button" aria-label="Next year">
+                      <i data-lucide="chevrons-right"></i>
+                    </button>
+                  </div>
+                  <div class="date-weekdays" aria-hidden="true">
+                    <span>Sun</span>
+                    <span>Mon</span>
+                    <span>Tue</span>
+                    <span>Wed</span>
+                    <span>Thu</span>
+                    <span>Fri</span>
+                    <span>Sat</span>
+                  </div>
+                  <div class="date-grid" id="dateGrid"></div>
+                </div>
+              </div>
+            </label>
+
+            <label class="field">
+              <span>Currency</span>
+              <select id="currencySelect" name="currency" disabled required>
+                <option value="">Loading currencies</option>
+              </select>
+            </label>
+
+            <label class="field correspondent-bank-field">
+              <span>Correspondent Bank</span>
+              <select id="correspondentBankSelect" name="correspondentBank" disabled required>
+                <option value="">Select currency first</option>
+              </select>
+            </label>
+
+            <section class="replenishment-result-section" aria-labelledby="eightyPercentTitle">
+              <div class="result-section-header">
+                <span class="result-section-kicker">Auto-filled</span>
+                <h2 id="eightyPercentTitle">80%</h2>
+              </div>
+              <div class="result-section-grid">
+                <label class="field">
+                  <span>Amount</span>
+                  <input id="eightyAmountInput" name="eightyAmount" placeholder="Auto-filled" disabled />
+                </label>
+                <label class="field">
+                  <span>Reference Number</span>
+                  <input id="eightyReferenceInput" name="eightyReferenceNumber" placeholder="Auto-filled" disabled />
+                </label>
+                <label class="field">
+                  <span>Date</span>
+                  <input id="eightyDateInput" name="eightyDate" placeholder="MM/DD/YYYY" disabled />
+                </label>
+                <label class="field">
+                  <span>Registered Amount</span>
+                  <input id="eightyRegisteredAmountInput" name="eightyRegisteredAmount" placeholder="Auto-filled" disabled />
+                </label>
+                <label class="field">
+                  <span>Correspondent Bank</span>
+                  <input id="eightyCorrespondentBankInput" name="eightyCorrespondentBank" placeholder="Auto-filled" disabled />
+                </label>
+              </div>
+            </section>
+
+            <section class="replenishment-result-section" aria-labelledby="hundredPercentTitle">
+              <div class="result-section-header">
+                <span class="result-section-kicker">Auto-filled</span>
+                <h2 id="hundredPercentTitle">100%</h2>
+              </div>
+              <div class="result-section-grid">
+                <label class="field">
+                  <span>Amount</span>
+                  <input id="hundredAmountInput" name="hundredAmount" placeholder="Auto-filled" disabled />
+                </label>
+                <label class="field">
+                  <span>Reference Number</span>
+                  <input id="hundredReferenceInput" name="hundredReferenceNumber" placeholder="Auto-filled" disabled />
+                </label>
+                <label class="field">
+                  <span>Date</span>
+                  <input id="hundredDateInput" name="hundredDate" placeholder="MM/DD/YYYY" disabled />
+                </label>
+                <label class="field">
+                  <span>Registered Amount</span>
+                  <input id="hundredRegisteredAmountInput" name="hundredRegisteredAmount" placeholder="Auto-filled" disabled />
+                </label>
+                <label class="field">
+                  <span>Correspondent Bank</span>
+                  <input id="hundredCorrespondentBankInput" name="hundredCorrespondentBank" placeholder="Auto-filled" disabled />
+                </label>
+              </div>
+            </section>
+
+            <div class="submit-row">
+              <button class="relenishments-submit-button" id="submitReplenishmentButton" type="button">
+                <i data-lucide="send"></i>
+                <span>Submit</span>
+              </button>
+            </div>
+          </form>
+        </section>
+      </main>
+    </div>
+
+    <div class="confirm-overlay" id="submitConfirmOverlay" hidden>
+      <div class="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="submitConfirmTitle">
+        <div class="confirm-icon" aria-hidden="true">
+          <i data-lucide="badge-alert"></i>
+        </div>
+        <h2 id="submitConfirmTitle">Are you sure?</h2>
+        <p>This will add the replenishment to the selected currency sheet.</p>
+        <div class="confirm-actions">
+          <button class="confirm-button confirm-yes" id="confirmSubmitYes" type="button">
+            <i data-lucide="check"></i>
+            <span>Yes</span>
+          </button>
+          <button class="confirm-button confirm-no" id="confirmSubmitNo" type="button">
+            <i data-lucide="x"></i>
+            <span>No</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>
