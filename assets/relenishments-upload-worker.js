@@ -45,7 +45,7 @@ async function readWorkbook(zip) {
   const relationshipsXml = await readZipText(zip, "xl/_rels/workbook.xml.rels");
   const relationships = readRelationships(relationshipsXml);
   const sheets = [];
-  const pattern = /<sheet\b([^>]*)\/?>/g;
+  const pattern = /<(?:\w+:)?sheet\b([^>]*)\/?>/g;
   let match;
 
   while ((match = pattern.exec(workbookXml))) {
@@ -66,7 +66,7 @@ async function readWorkbook(zip) {
 
 function readRelationships(xml) {
   const relationships = new Map();
-  const pattern = /<Relationship\b([^>]*)\/?>/g;
+  const pattern = /<(?:\w+:)?Relationship\b([^>]*)\/?>/g;
   let match;
 
   while ((match = pattern.exec(xml))) {
@@ -85,13 +85,13 @@ async function readSharedStrings(zip) {
 
   const xml = await entry.async("text");
   const strings = [];
-  const pattern = /<si\b[^>]*>([\s\S]*?)<\/si>/g;
+  const pattern = /<(?:\w+:)?si\b[^>]*>([\s\S]*?)<\/(?:\w+:)?si>/g;
   let match;
 
   while ((match = pattern.exec(xml))) {
     const itemXml = match[1] || "";
     const parts = [];
-    const textPattern = /<t\b[^>]*>([\s\S]*?)<\/t>/g;
+    const textPattern = /<(?:\w+:)?t\b[^>]*>([\s\S]*?)<\/(?:\w+:)?t>/g;
     let textMatch;
     while ((textMatch = textPattern.exec(itemXml))) {
       parts.push(decodeXml(textMatch[1] || ""));
@@ -104,13 +104,13 @@ async function readSharedStrings(zip) {
 
 function readWorksheetRows(xml, sharedStrings) {
   const rows = [];
-  const rowPattern = /<row\b[^>]*?(?:\/>|>[\s\S]*?<\/row>)/g;
+  const rowPattern = /<(?:\w+:)?row\b[^>]*?(?:\/>|>[\s\S]*?<\/(?:\w+:)?row>)/g;
   let rowMatch;
 
   while ((rowMatch = rowPattern.exec(xml))) {
     const rowXml = rowMatch[0] || "";
     const values = [];
-    const cellPattern = /<c\b([^>]*?)>([\s\S]*?)<\/c>|<c\b([^>]*?)\/>/g;
+    const cellPattern = /<(?:\w+:)?c\b([^>]*?)>([\s\S]*?)<\/(?:\w+:)?c>|<(?:\w+:)?c\b([^>]*?)\/>/g;
     let cellMatch;
 
     while ((cellMatch = cellPattern.exec(rowXml))) {
@@ -149,7 +149,7 @@ function readCellValue(attrs, body, sharedStrings) {
 
 function readInlineString(body) {
   const parts = [];
-  const textPattern = /<t\b[^>]*>([\s\S]*?)<\/t>/g;
+  const textPattern = /<(?:\w+:)?t\b[^>]*>([\s\S]*?)<\/(?:\w+:)?t>/g;
   let match;
   while ((match = textPattern.exec(body))) {
     parts.push(decodeXml(match[1] || ""));
@@ -158,7 +158,7 @@ function readInlineString(body) {
 }
 
 function readValue(body) {
-  const match = String(body || "").match(/<v\b[^>]*>([\s\S]*?)<\/v>/);
+  const match = String(body || "").match(/<(?:\w+:)?v\b[^>]*>([\s\S]*?)<\/(?:\w+:)?v>/);
   return match ? decodeXml(match[1] || "").trim() : "";
 }
 
