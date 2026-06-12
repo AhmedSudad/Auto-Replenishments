@@ -48,25 +48,56 @@
             </div>
           </div>
         </div>
+        <figure class="hero-art hero-art-secondary">
+          <img src="assets/automation-unifying-hero.png" alt="Automation replacing manual operations" />
+          <canvas class="hero-flow-canvas" id="replenishmentHeroCanvas" aria-hidden="true"></canvas>
+          <figcaption class="sr-only">
+            <h1>Automation replacing manual operations</h1>
+          </figcaption>
+        </figure>
       </header>
 
       <main class="secondary-workspace">
         <section class="panel placeholder-panel" aria-labelledby="relenishmentsTitle">
           <div class="panel-header">
-            <div>
+            <div class="panel-header-copy">
               <p class="section-kicker">Workspace</p>
               <h1 id="relenishmentsTitle">Replenishments</h1>
             </div>
-            <span class="status-chip muted" id="relenishmentsStatus">Loading lists</span>
+            <div class="panel-header-meta">
+              <span class="status-chip muted" id="relenishmentsStatus">Loading lists</span>
+              <div class="operation-tracker" id="replenishmentOperationTracker" aria-live="polite">
+                <div class="operation-tracker-top">
+                  <span class="operation-tracker-label" id="replenishmentOperationLabel">Idle</span>
+                  <span class="operation-tracker-percent" id="replenishmentOperationPercent">0%</span>
+                </div>
+                <div class="operation-tracker-steps" id="replenishmentOperationSteps">Idle → Ready → Done</div>
+                <div class="operation-tracker-track" aria-hidden="true">
+                  <span class="operation-tracker-fill" id="replenishmentOperationFill"></span>
+                </div>
+              </div>
+            </div>
           </div>
 
           <form class="relenishments-form" id="relenishmentsForm" autocomplete="off">
-            <label class="field">
+            <div class="field bank-field">
               <span>Bank</span>
-              <select id="bankSelect" name="bank" disabled required>
-                <option value="">Loading banks</option>
-              </select>
-            </label>
+              <div class="bank-field-row">
+                <select id="bankSelect" name="bank" disabled required>
+                  <option value="">Loading banks</option>
+                </select>
+                <div class="bank-field-actions" aria-label="Bank actions">
+                  <button class="relenishments-approve-button" id="approveReplenishmentButton" type="button">
+                    <i data-lucide="badge-check"></i>
+                    <span>Approve</span>
+                  </button>
+                  <button class="relenishments-reject-button" id="rejectReplenishmentButton" type="button">
+                    <i data-lucide="badge-x"></i>
+                    <span>Reject</span>
+                  </button>
+                </div>
+              </div>
+            </div>
 
             <label class="field">
               <span>Amount</span>
@@ -156,7 +187,7 @@
                   <span>Correspondent Bank</span>
                   <input id="eightyCorrespondentBankInput" name="eightyCorrespondentBank" placeholder="Auto-filled" disabled />
                 </label>
-                <label class="field">
+                <label class="field coverage-field">
                   <span>Coverage</span>
                   <input id="eightyCoverageInput" name="eightyCoverage" placeholder="Auto-filled" disabled />
                 </label>
@@ -189,7 +220,7 @@
                   <span>Correspondent Bank</span>
                   <input id="hundredCorrespondentBankInput" name="hundredCorrespondentBank" placeholder="Auto-filled" disabled />
                 </label>
-                <label class="field">
+                <label class="field coverage-field">
                   <span>Coverage</span>
                   <input id="hundredCoverageInput" name="hundredCoverage" placeholder="Auto-filled" disabled />
                 </label>
@@ -198,6 +229,14 @@
 
             <div class="submit-row">
               <input class="sr-only" id="replenishmentWorkbookInput" type="file" accept=".xlsx,.xlsm" />
+              <button class="relenishments-reset-button" id="resetReplenishmentButton" type="button">
+                <i data-lucide="rotate-ccw"></i>
+                <span>Reset</span>
+              </button>
+              <button class="relenishments-report-button" id="reportReplenishmentButton" type="button">
+                <i data-lucide="clipboard-list"></i>
+                <span>End-of-day report</span>
+              </button>
               <button class="relenishments-upload-button" id="uploadReplenishmentButton" type="button">
                 <i data-lucide="upload"></i>
                 <span>Upload</span>
@@ -229,6 +268,26 @@
             <span>Yes</span>
           </button>
           <button class="confirm-button confirm-no" id="confirmSubmitNo" type="button">
+            <i data-lucide="x"></i>
+            <span>No</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="confirm-overlay action-confirm-overlay" id="actionConfirmOverlay" hidden>
+      <div class="confirm-dialog action-confirm-dialog" id="actionConfirmDialog" role="dialog" aria-modal="true" aria-labelledby="actionConfirmTitle" aria-describedby="actionConfirmMessage">
+        <div class="confirm-icon action-confirm-icon" id="actionConfirmIcon" aria-hidden="true">
+          <i data-lucide="badge-alert"></i>
+        </div>
+        <h2 id="actionConfirmTitle">Are you sure?</h2>
+        <p id="actionConfirmMessage">Please confirm this action.</p>
+        <div class="confirm-actions">
+          <button class="confirm-button confirm-yes" id="actionConfirmYes" type="button">
+            <i data-lucide="check"></i>
+            <span>Yes</span>
+          </button>
+          <button class="confirm-button confirm-no" id="actionConfirmNo" type="button">
             <i data-lucide="x"></i>
             <span>No</span>
           </button>

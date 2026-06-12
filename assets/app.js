@@ -579,13 +579,96 @@
         color: [240, 248, 255],
         speed: 0.00016,
       },
+      {
+        from: [0.02, 0.18],
+        c1: [0.18, 0.2],
+        c2: [0.32, 0.31],
+        to: [0.47, 0.42],
+        color: [112, 80, 255],
+        speed: 0.00009,
+      },
+      {
+        from: [0.04, 0.72],
+        c1: [0.2, 0.68],
+        c2: [0.34, 0.58],
+        to: [0.49, 0.51],
+        color: [44, 220, 255],
+        speed: 0.000085,
+      },
+      {
+        from: [0.96, 0.22],
+        c1: [0.8, 0.24],
+        c2: [0.66, 0.34],
+        to: [0.55, 0.45],
+        color: [50, 242, 220],
+        speed: 0.000095,
+      },
+      {
+        from: [0.94, 0.68],
+        c1: [0.8, 0.64],
+        c2: [0.66, 0.58],
+        to: [0.55, 0.52],
+        color: [176, 88, 255],
+        speed: 0.00009,
+      },
     ];
-    const particles = Array.from({ length: 46 }, (_, index) => ({
+    const particles = Array.from({ length: 108 }, (_, index) => ({
       pathIndex: index % paths.length,
       offset: Math.random(),
-      size: 1.2 + Math.random() * 2.1,
-      tail: 0.035 + Math.random() * 0.045,
-      delay: Math.random() * 0.8,
+      size: 1.15 + Math.random() * 1.9,
+      tail: 0.03 + Math.random() * 0.045,
+      delay: Math.random() * 1.1,
+    }));
+    const whitePaths = [
+      {
+        from: [0.02, 0.22],
+        c1: [0.18, 0.2],
+        c2: [0.36, 0.3],
+        to: [0.51, 0.41],
+        speed: 0.00013,
+      },
+      {
+        from: [0.04, 0.52],
+        c1: [0.2, 0.5],
+        c2: [0.37, 0.49],
+        to: [0.52, 0.5],
+        speed: 0.00011,
+      },
+      {
+        from: [0.08, 0.74],
+        c1: [0.22, 0.69],
+        c2: [0.35, 0.61],
+        to: [0.49, 0.53],
+        speed: 0.0001,
+      },
+      {
+        from: [0.97, 0.2],
+        c1: [0.82, 0.23],
+        c2: [0.67, 0.33],
+        to: [0.56, 0.43],
+        speed: 0.00012,
+      },
+      {
+        from: [0.96, 0.63],
+        c1: [0.8, 0.6],
+        c2: [0.66, 0.56],
+        to: [0.56, 0.52],
+        speed: 0.000105,
+      },
+      {
+        from: [0.5, 0.08],
+        c1: [0.51, 0.17],
+        c2: [0.52, 0.27],
+        to: [0.52, 0.38],
+        speed: 0.00014,
+      },
+    ];
+    const whiteParticles = Array.from({ length: 140 }, (_, index) => ({
+      pathIndex: index % whitePaths.length,
+      offset: Math.random(),
+      size: 0.45 + Math.random() * 0.75,
+      tail: 0.03 + Math.random() * 0.04,
+      delay: Math.random() * 1.2,
     }));
     let width = 0;
     let height = 0;
@@ -631,9 +714,27 @@
       ctx.fill();
     }
 
+    function drawWhiteGlow(point, radius, alpha) {
+      const glowRadius = radius * 4.2;
+      const gradient = ctx.createRadialGradient(point.x, point.y, 0, point.x, point.y, glowRadius);
+      gradient.addColorStop(0, `rgba(255, 255, 255, ${alpha})`);
+      gradient.addColorStop(0.25, `rgba(255, 255, 255, ${alpha * 0.45})`);
+      gradient.addColorStop(0.6, `rgba(255, 255, 255, ${alpha * 0.12})`);
+      gradient.addColorStop(1, "rgba(255, 255, 255, 0)");
+      ctx.fillStyle = gradient;
+      ctx.beginPath();
+      ctx.arc(point.x, point.y, glowRadius, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = `rgba(255, 255, 255, ${Math.min(1, alpha + 0.24)})`;
+      ctx.beginPath();
+      ctx.arc(point.x, point.y, Math.max(0.9, radius), 0, Math.PI * 2);
+      ctx.fill();
+    }
+
     function drawTrail(path, fromT, toT, color, alpha) {
       const steps = 5;
-      ctx.lineWidth = Math.max(1, width * 0.0011);
+      ctx.lineWidth = Math.max(1.1, width * 0.00115);
       ctx.lineCap = "round";
       for (let step = 0; step < steps; step += 1) {
         const start = fromT + ((toT - fromT) * step) / steps;
@@ -659,13 +760,23 @@
         const ease = 1 - Math.pow(1 - progress, 1.8);
         const pulse = 0.55 + Math.sin((progress + particle.offset) * Math.PI) * 0.25;
         const point = pointOnPath(path, ease);
-        drawTrail(path, Math.max(0, ease - particle.tail), ease, path.color, 0.16 * pulse);
-        drawGlow(point, path.color, particle.size, 0.4 * pulse);
+        drawTrail(path, Math.max(0, ease - particle.tail), ease, path.color, 0.24 * pulse);
+        drawGlow(point, path.color, particle.size, 0.52 * pulse);
+      }
+
+      for (const particle of whiteParticles) {
+        const path = whitePaths[particle.pathIndex];
+        const progress = (timestamp * path.speed + particle.offset + particle.delay) % 1;
+        const ease = 1 - Math.pow(1 - progress, 1.75);
+        const pulse = 0.48 + Math.sin((progress + particle.offset) * Math.PI * 1.7) * 0.18;
+        const point = pointOnPath(path, ease);
+        drawTrail(path, Math.max(0, ease - particle.tail), ease, [255, 255, 255], 0.18 * pulse);
+        drawWhiteGlow(point, particle.size, 0.55 * pulse);
       }
 
       const focus = { x: width * 0.52, y: height * 0.45 };
-      const focusPulse = 0.45 + Math.sin(timestamp * 0.003) * 0.16;
-      drawGlow(focus, [55, 242, 225], Math.max(2.5, width * 0.002), focusPulse);
+      const focusPulse = 0.48 + Math.sin(timestamp * 0.003) * 0.16;
+      drawGlow(focus, [55, 242, 225], Math.max(2.8, width * 0.0022), focusPulse);
 
       ctx.globalCompositeOperation = "source-over";
       requestAnimationFrame(draw);

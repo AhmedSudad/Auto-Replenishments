@@ -64,21 +64,28 @@ The browser app needs a deployed Apps Script web app to read full Google Sheet r
 
 More deployment details are in `google-apps-script/README.md`.
 
-## Planned Google Drive Upload Workflow
+## Google Drive Upload Workflow
 
-Future replenishment work should add an Apps Script endpoint for manually uploaded Excel files:
+The replenishment upload button sends manually uploaded Excel files to Apps Script:
 
 - Root Google Drive folder ID: `1I29dTj90DL6xxwvJvomw2MWPP3MTvPEZ`
 - The folder is expected to contain year, bank, and currency subfolders.
 - The replenishment page upload button should let the user select a downloaded Excel file.
-- The app should infer the target bank/currency folder from the uploaded Excel file name and selected form values, allowing for slight bank-name variations.
+- The upload process is standalone and does not require the replenishment form fields to be filled.
+- The app should infer the target bank folder from the uploaded Excel file name and workbook contents, allowing for slight bank-name variations and recursive nested Drive folders where the order may vary. The upload year should help choose the correct master spreadsheet, not the folder location.
+- The master spreadsheet can be a large `.xlsx` file in Drive; the Apps Script converts it to a Google Sheet copy for appending when needed, so the largest spreadsheet file wins even if the filename doesn't contain the word `master`.
+- The workbook `Currency Type` column determines the target currency folder when the page currency field is not selected.
 - Apps Script should save the uploaded Excel file into the matching Google Drive bank/currency folder.
 - Apps Script should copy/append the uploaded Excel contents into the large master Google Sheet already present in that same folder.
+- The uploaded workbook must contain a `Request Number` column. Apps Script checks those request numbers before saving the file or appending rows, and blocks the entire upload if any request number already exists in the master Google Sheet or appears twice in the uploaded workbook.
+- Uploaded columns are matched to the master sheet by header. The script dynamically detects one-row or multi-row bilingual header bands, then treats close English/Arabic header variants, such as `Request Number`, `Request No`, and Arabic equivalents for known fields, as the same column when they clearly match.
+- Any uploaded columns that do not match the master headers are added at the far right of the master sheet so they can be handled manually later.
+- Uploaded rows are appended below existing data at the first available blank row.
 - The master Google Sheet will not necessarily contain `master` in its name. On first use, Apps Script should detect it by opening candidate Google Sheets in the folder and choosing the one with the largest used data range.
 - After detection, Apps Script should persist a mapping of `folder ID -> master spreadsheet ID` so future uploads use the saved master directly instead of scanning every file again.
 - If the saved master file is missing or inaccessible, Apps Script should re-run detection and update the mapping.
 
-Recommended mapping storage: a small auditable config Google Sheet, with Apps Script `PropertiesService` as a fallback.
+Mapping storage is supported through Apps Script `PropertiesService`. To use a small auditable config Google Sheet instead, put its spreadsheet ID in `MASTER_CACHE_SPREADSHEET_ID` inside `google-apps-script/relenishments-reader.gs`.
 
 ## Cloudflare Pages Deployment
 
