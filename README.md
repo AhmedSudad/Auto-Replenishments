@@ -39,7 +39,7 @@ Static browser workspace and Google Apps Script automation for calculating and s
 This is a static site. Serve the folder with any local static server and open the local URL in a browser.
 
 ```powershell
-cd C:\Users\ahmed.moustafa\Desktop\PY\company-name-unifier
+cd <path-to-this-repo>
 python -m http.server 8790 --bind 127.0.0.1
 ```
 
@@ -108,7 +108,7 @@ npx wrangler pages deploy . --project-name auto-replenishments
 If Git is installed on the work PC, you can connect this local folder to GitHub entirely from PowerShell:
 
 ```powershell
-cd C:\Users\ahmed.moustafa\Desktop\PY\company-name-unifier
+cd <path-to-this-repo>
 git init
 git branch -M main
 git remote add origin https://github.com/AhmedSudad/auto-replenishments.git
@@ -130,7 +130,7 @@ Authentication can be done from the terminal with Git Credential Manager, a pers
 Some work PCs block Git's HTTPS transport even when normal PowerShell HTTPS works. If `git push` fails with a connection reset, use the API publisher:
 
 ```powershell
-cd C:\Users\ahmed.moustafa\Desktop\PY\company-name-unifier
+cd <path-to-this-repo>
 powershell -ExecutionPolicy Bypass -File .\scripts\publish-github-api.ps1
 ```
 
