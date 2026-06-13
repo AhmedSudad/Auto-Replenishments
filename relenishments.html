@@ -276,12 +276,28 @@
     </div>
 
     <div class="confirm-overlay action-confirm-overlay" id="actionConfirmOverlay" hidden>
-      <div class="confirm-dialog action-confirm-dialog" id="actionConfirmDialog" role="dialog" aria-modal="true" aria-labelledby="actionConfirmTitle" aria-describedby="actionConfirmMessage">
+      <div
+        class="confirm-dialog action-confirm-dialog"
+        id="actionConfirmDialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="actionConfirmTitle"
+        aria-describedby="actionConfirmMessage actionConfirmNotesLabel"
+      >
         <div class="confirm-icon action-confirm-icon" id="actionConfirmIcon" aria-hidden="true">
           <i data-lucide="badge-alert"></i>
         </div>
         <h2 id="actionConfirmTitle">Are you sure?</h2>
         <p id="actionConfirmMessage">Please confirm this action.</p>
+        <label class="action-confirm-notes" id="actionConfirmNotesLabel" hidden>
+          <span>Notes</span>
+          <textarea
+            id="actionConfirmNotes"
+            name="actionConfirmNotes"
+            rows="4"
+            placeholder="Write notes here..."
+          ></textarea>
+        </label>
         <div class="confirm-actions">
           <button class="confirm-button confirm-yes" id="actionConfirmYes" type="button">
             <i data-lucide="check"></i>
