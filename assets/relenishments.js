@@ -51,6 +51,8 @@
     actionConfirmIcon: document.getElementById("actionConfirmIcon"),
     actionConfirmTitle: document.getElementById("actionConfirmTitle"),
     actionConfirmMessage: document.getElementById("actionConfirmMessage"),
+    actionConfirmNotesLabel: document.getElementById("actionConfirmNotesLabel"),
+    actionConfirmNotes: document.getElementById("actionConfirmNotes"),
     actionConfirmYes: document.getElementById("actionConfirmYes"),
     actionConfirmNo: document.getElementById("actionConfirmNo"),
     duplicateOverlay: document.getElementById("duplicateReferenceOverlay"),
@@ -201,10 +203,7 @@
     function bindReportButton() {
       elements.reportButton?.addEventListener("click", async () => {
         if (isOperationActive()) return;
-        beginOperation("report", "Preparing report");
-        setStatus("End-of-day report will be added next", "muted");
-        await sleep(900);
-        finishOperation("End-of-day report will be added next");
+        await updateEndOfDayReport();
       });
     }
 
@@ -213,36 +212,20 @@
         if (isOperationActive()) return;
         openActionConfirm({
           kind: "reset",
-          title: "Reset this form?",
-          message: "This will clear the current replenishment inputs. You can still change the reset behavior later.",
+          title: "Reset sheet?",
+          message: "This will delete the populated replenishment rows and keep the template/footer rows in place.",
           yesLabel: "Reset",
-          onConfirm: () => setStatus("Reset action will be added next", "muted"),
+          showNotes: false,
+          onConfirm: async () => {
+            await resetReplenishmentSheet();
+          },
         });
       });
     }
 
     function bindApproveRejectButtons() {
-      elements.approveButton?.addEventListener("click", () => {
-        if (isOperationActive()) return;
-        openActionConfirm({
-          kind: "approve",
-          title: "Approve this item?",
-          message: "Are you sure you want to approve this item?",
-          yesLabel: "Approve",
-          onConfirm: () => setStatus("Approve action will be added next", "muted"),
-        });
-      });
-
-      elements.rejectButton?.addEventListener("click", () => {
-        if (isOperationActive()) return;
-        openActionConfirm({
-          kind: "reject",
-          title: "Reject this item?",
-          message: "Are you sure you want to reject this item?",
-          yesLabel: "Reject",
-          onConfirm: () => setStatus("Reject action will be added next", "muted"),
-        });
-      });
+      elements.approveButton?.addEventListener("click", () => handleDecisionIntent("approve"));
+      elements.rejectButton?.addEventListener("click", () => handleDecisionIntent("reject"));
     }
 
     function getActionButtons() {
@@ -2084,9 +2067,10 @@
       elements.actionConfirmNo?.addEventListener("click", closeActionConfirm);
       elements.actionConfirmYes?.addEventListener("click", async () => {
         const pending = state.pendingActionConfirm;
+        const notes = String(elements.actionConfirmNotes?.value || "").trim();
         closeActionConfirm({ preserveFocus: true });
         if (!pending) return;
-        await pending.onConfirm?.();
+        await pending.onConfirm?.({ notes });
       });
       elements.actionConfirmOverlay?.addEventListener("click", (event) => {
         if (event.target === elements.actionConfirmOverlay) closeActionConfirm();
@@ -2098,6 +2082,7 @@
     document.addEventListener("keydown", (event) => {
       if (event.key !== "Escape") return;
       closeSubmitConfirm();
+      closeActionConfirm();
       closeDuplicateReferencePrompt();
     });
   }
@@ -2276,18 +2261,28 @@
     if (dialog) {
       dialog.classList.toggle("duplicate-dialog", variant !== "success");
       dialog.classList.toggle("success-dialog", variant === "success");
+      dialog.classList.toggle("warning-dialog", variant === "warning");
     }
     if (icon) {
       icon.classList.toggle("duplicate-icon", variant !== "success");
       icon.classList.toggle("success-icon", variant === "success");
-      icon.innerHTML = `<i data-lucide="${variant === "success" ? "circle-check-big" : "badge-alert"}"></i>`;
+      icon.classList.toggle("warning-icon", variant === "warning");
+      icon.innerHTML = `<i data-lucide="${
+        variant === "success" ? "circle-check-big" : variant === "warning" ? "triangle-alert" : "badge-alert"
+      }"></i>`;
     }
     if (elements.duplicateClose) {
       elements.duplicateClose.classList.toggle("duplicate-close", variant !== "success");
       elements.duplicateClose.classList.toggle("success-close", variant === "success");
+      elements.duplicateClose.classList.toggle("warning-close", variant === "warning");
     }
     if (kicker) {
-      kicker.textContent = variant === "success" ? "Upload complete" : "Submission blocked";
+      kicker.textContent =
+        variant === "success"
+          ? "Upload complete"
+          : variant === "warning"
+            ? "Report updated"
+            : "Submission blocked";
     }
     window.lucide?.createIcons();
 
@@ -2325,39 +2320,385 @@
     elements.submitButton?.focus();
   }
 
-    function openSubmitConfirm() {
-      if (!elements.confirmOverlay) return;
-      updateSubmitConfirmMessage();
-      elements.confirmOverlay.hidden = false;
-      setConfirmButtonsBusy(false);
-      elements.confirmYes?.focus();
+  function validateDecisionFields() {
+    const requiredFields = [
+      { element: elements.bankSelect, label: "Bank" },
+      { element: elements.amountInput, label: "Amount" },
+      { element: elements.currencySelect, label: "Currency" },
+      { element: elements.correspondentBankSelect, label: "Correspondent Bank" },
+      { element: elements.eightyCoverageInput, label: "80% Coverage" },
+      { element: elements.hundredCoverageInput, label: "100% Coverage" },
+    ];
+
+    for (const field of requiredFields) {
+      const value = String(field.element?.value || "").trim();
+      if (!value || value === "N/A") {
+        setStatus(`${field.label} is required`, "error");
+        const focusElement = field.element;
+        if (focusElement && typeof focusElement.focus === "function") {
+          focusElement.focus();
+        }
+        return false;
+      }
     }
 
-    function openActionConfirm({ kind, title, message, yesLabel, onConfirm }) {
-      if (!elements.actionConfirmOverlay || !elements.actionConfirmDialog) return;
-      state.pendingActionConfirm = { onConfirm };
-      elements.actionConfirmOverlay.hidden = false;
-      elements.actionConfirmDialog.dataset.actionKind = kind || "approve";
-      if (elements.actionConfirmIcon) {
-        elements.actionConfirmIcon.dataset.actionKind = kind || "approve";
-      }
-      if (elements.actionConfirmTitle) elements.actionConfirmTitle.textContent = title || "Are you sure?";
-      if (elements.actionConfirmMessage) elements.actionConfirmMessage.textContent = message || "Please confirm this action.";
-      if (elements.actionConfirmYes) {
-        elements.actionConfirmYes.querySelector("span")?.replaceChildren(document.createTextNode(yesLabel || "Yes"));
-      }
-      setActionConfirmButtonsBusy(false);
-      elements.actionConfirmYes?.focus();
+    return true;
+  }
+
+  function handleDecisionIntent(kind) {
+    if (isOperationActive()) return;
+    if (!validateDecisionFields()) return;
+
+    const isApprove = kind === "approve";
+    openActionConfirm({
+      kind,
+      title: isApprove ? "Confirm approval?" : "Confirm rejection?",
+      message: "Enter notes, then confirm this action.",
+      yesLabel: isApprove ? "Save approval" : "Save rejection",
+      showNotes: true,
+      onConfirm: async ({ notes }) => {
+        await submitDecision(kind, notes);
+      },
+    });
+  }
+
+  async function submitDecision(kind, notes) {
+    if (state.submitting) return;
+
+    const writerUrl = getAppsScriptWriterUrl();
+    if (!writerUrl) {
+      setStatus("Save URL is missing", "error");
+      return;
     }
 
-    function closeActionConfirm(options = {}) {
-      if (!elements.actionConfirmOverlay || elements.actionConfirmOverlay.hidden) return;
-      elements.actionConfirmOverlay.hidden = true;
-      if (!options.preserveAction) {
-        state.pendingActionConfirm = null;
+    const decision = kind === "reject" ? "reject" : "approve";
+    const statusLabel = decision === "approve" ? "مقبول" : "مرفوض";
+    state.submitting = true;
+    beginOperation(decision, decision === "approve" ? "Saving approval" : "Saving rejection");
+    setStatus(decision === "approve" ? "Saving approval" : "Saving rejection", "muted");
+    let operationLabel = decision === "approve" ? "Approval saved" : "Rejection saved";
+    let operationStatus = "success";
+
+    try {
+      const payload = collectDecisionPayload(decision, notes);
+      const response = await postReplenishmentDecision(writerUrl, payload);
+      closeActionConfirm({ preserveAction: true, preserveFocus: true });
+      if (response.duplicate) {
+        showDecisionDuplicatePrompt(response, payload);
+        setStatus(response.message || "Duplicate decision not added", "warning");
+        operationLabel = "Duplicate decision blocked";
+        operationStatus = "warning";
+        return;
       }
-      setActionConfirmButtonsBusy(false);
+      showDecisionSuccessPrompt(response, payload);
+      setStatus(`${statusLabel} row ${response.row}`, "muted");
+    } catch (error) {
+      console.error(error);
+      const message = error.message || "Decision save failed";
+      operationLabel = message;
+      operationStatus = "error";
+      setStatus(message, "error");
+      showBlockingPrompt("Decision failed", message);
+    } finally {
+      state.submitting = false;
+      finishOperation(operationLabel, operationStatus);
     }
+  }
+
+  function collectDecisionPayload(decision, notes) {
+    const statusLabel = decision === "approve" ? "مقبول" : "مرفوض";
+    return {
+      action: "recordReplenishmentDecision",
+      decision,
+      bank: requiredFieldValue(elements.bankSelect, "Bank"),
+      amount: requiredFieldValue(elements.amountInput, "Amount"),
+      currency: requiredFieldValue(elements.currencySelect, "Currency"),
+      correspondentBank: requiredFieldValue(elements.correspondentBankSelect, "Correspondent Bank"),
+      eightyCoverage: requiredFieldValue(elements.eightyCoverageInput, "80% Coverage"),
+      hundredCoverage: requiredFieldValue(elements.hundredCoverageInput, "100% Coverage"),
+      status: statusLabel,
+      notes: String(notes || "").trim(),
+    };
+  }
+
+  async function postReplenishmentDecision(writerUrl, payload) {
+    const response = await fetch(writerUrl, {
+      method: "POST",
+      mode: "cors",
+      cache: "no-store",
+      body: new URLSearchParams(payload),
+    });
+    if (!response.ok) {
+      throw new Error("Decision request failed.");
+    }
+
+    const contentType = response.headers.get("content-type") || "";
+    if (!contentType.toLowerCase().includes("application/json")) {
+      throw new Error("Apps Script update required");
+    }
+
+    const result = await response.json();
+    if (!result || result.ok !== true) {
+      throw new Error(result?.error || "Decision request returned an error.");
+    }
+
+    return result;
+  }
+
+  function showDecisionSuccessPrompt(result, payload) {
+    openReferencePrompt({
+      variant: "success",
+      title: payload.status === "مقبول" ? "Approval saved" : "Rejection saved",
+      message: "The decision has been saved to the replenishments sheet.",
+      items: [
+        { label: "Sequence", value: String(result.sequenceNumber || result.sequence || "") },
+        { label: "Bank", value: payload.bank || "" },
+        { label: "Currency", value: payload.currency || "" },
+        { label: "Amount", value: formatCompactAmount(payload.amount || "") },
+        { label: "Correspondent Bank", value: payload.correspondentBank || "" },
+        { label: "80% Coverage", value: payload.eightyCoverage || "" },
+        { label: "100% Coverage", value: payload.hundredCoverage || "" },
+        { label: "Status", value: payload.status || "" },
+        { label: "Notes", value: payload.notes || "" },
+      ],
+    });
+  }
+
+  function showDecisionDuplicatePrompt(result, payload) {
+    openReferencePrompt({
+      variant: "warning",
+      title: "Duplicate decision",
+      message: result?.message || "This decision already exists in the sheet and was not added.",
+      items: [
+        { label: "Sheet", value: result.sheetName || "" },
+        { label: "Existing row", value: String(result.row || "") },
+        { label: "Bank", value: payload.bank || "" },
+        { label: "Currency", value: payload.currency || "" },
+        { label: "Amount", value: formatCompactAmount(payload.amount || "") },
+        { label: "Correspondent Bank", value: payload.correspondentBank || "" },
+        { label: "80% Coverage", value: payload.eightyCoverage || "" },
+        { label: "100% Coverage", value: payload.hundredCoverage || "" },
+        { label: "Status", value: payload.status || "" },
+        { label: "Notes", value: payload.notes || "" },
+      ],
+    });
+  }
+
+  async function updateEndOfDayReport() {
+    const writerUrl = getAppsScriptWriterUrl();
+    if (!writerUrl) {
+      setStatus("Save URL is missing", "error");
+      return;
+    }
+
+    state.submitting = true;
+    beginOperation("report", "Updating end-of-day report");
+    setStatus("Updating end-of-day report", "muted");
+    let operationLabel = "End-of-day report updated";
+    let operationStatus = "success";
+
+    try {
+      const response = await postEndOfDayReport(writerUrl);
+      closeActionConfirm({ preserveAction: true, preserveFocus: true });
+      showEndOfDayReportPrompt(response);
+      setStatus(
+        response.alreadyCurrent ? "End-of-day report date is already current" : "End-of-day report updated",
+        response.alreadyCurrent ? "warning" : "muted"
+      );
+      if (response.alreadyCurrent) {
+        operationStatus = "warning";
+      }
+    } catch (error) {
+      console.error(error);
+      const message = error.message || "End-of-day report failed";
+      operationLabel = message;
+      operationStatus = "error";
+      setStatus(message, "error");
+      showBlockingPrompt("End-of-day report failed", message);
+    } finally {
+      state.submitting = false;
+      finishOperation(operationLabel, operationStatus);
+    }
+  }
+
+  async function postEndOfDayReport(writerUrl) {
+    const response = await fetch(writerUrl, {
+      method: "POST",
+      mode: "cors",
+      cache: "no-store",
+      body: new URLSearchParams({
+        action: "updateEndOfDayReport",
+      }),
+    });
+    if (!response.ok) {
+      throw new Error("End-of-day report request failed.");
+    }
+
+    const contentType = response.headers.get("content-type") || "";
+    if (!contentType.toLowerCase().includes("application/json")) {
+      throw new Error("Apps Script update required");
+    }
+
+    const result = await response.json();
+    if (!result || result.ok !== true) {
+      throw new Error(result?.error || "End-of-day report request returned an error.");
+    }
+
+    return result;
+  }
+
+  function showEndOfDayReportPrompt(result) {
+    openReferencePrompt({
+      variant: result?.alreadyCurrent ? "warning" : "success",
+      title: result?.alreadyCurrent ? "Report already current" : "End-of-day report updated",
+      message: result?.alreadyCurrent
+        ? "The report date was already up to date, but the approved total was refreshed."
+        : "The merged report sentence and approved total were updated.",
+      items: [
+        { label: "Sheet", value: result.sheetName || "" },
+        { label: "Range", value: result.range || "B4:H4" },
+        { label: "Current date", value: result.today || "" },
+        { label: "Approved rows", value: String(result.totalRows || "0") },
+        { label: "Decision entries", value: String(result.totalEntries || "0") },
+        { label: "Approved total", value: formatCompactAmount(result.totalAmount || "") },
+        { label: "Approved total (words)", value: result.totalWords || "" },
+        { label: "Total range", value: result.totalRange || "" },
+        { label: "Words range", value: result.totalWordsRange || "" },
+        { label: "Entries range", value: result.entryCountRange || "" },
+        { label: "Status", value: result.alreadyCurrent && !result.updated ? "No change" : "Updated" },
+      ],
+    });
+  }
+
+  async function resetReplenishmentSheet() {
+    if (state.submitting) return;
+
+    const writerUrl = getAppsScriptWriterUrl();
+    if (!writerUrl) {
+      setStatus("Save URL is missing", "error");
+      return;
+    }
+
+    state.submitting = true;
+    beginOperation("reset", "Resetting sheet");
+    setStatus("Resetting sheet", "muted");
+    let operationLabel = "Sheet reset";
+    let operationStatus = "success";
+
+    try {
+      const response = await postReplenishmentReset(writerUrl);
+      closeActionConfirm({ preserveAction: true, preserveFocus: true });
+      showResetSuccessPrompt(response);
+      setStatus("Replenishment sheet reset", "muted");
+    } catch (error) {
+      console.error(error);
+      const message = error.message || "Reset failed";
+      operationLabel = message;
+      operationStatus = "error";
+      setStatus(message, "error");
+      showBlockingPrompt("Reset failed", message);
+    } finally {
+      state.submitting = false;
+      finishOperation(operationLabel, operationStatus);
+    }
+  }
+
+  async function postReplenishmentReset(writerUrl) {
+    const response = await fetch(writerUrl, {
+      method: "POST",
+      mode: "cors",
+      cache: "no-store",
+      body: new URLSearchParams({
+        action: "resetReplenishmentSheet",
+      }),
+    });
+    if (!response.ok) {
+      throw new Error("Reset request failed.");
+    }
+
+    const contentType = response.headers.get("content-type") || "";
+    if (!contentType.toLowerCase().includes("application/json")) {
+      throw new Error("Apps Script update required");
+    }
+
+    const result = await response.json();
+    if (!result || result.ok !== true) {
+      throw new Error(result?.error || "Reset request returned an error.");
+    }
+
+    return result;
+  }
+
+  function showResetSuccessPrompt(result) {
+    const alreadyCleared = Boolean(result?.alreadyCleared);
+    openReferencePrompt({
+      variant: "success",
+      title: "Sheet reset",
+      message: alreadyCleared
+        ? "No replenishment rows were found to delete, so the sheet was already empty."
+        : "Dynamic replenishment rows were deleted and the template was kept in place.",
+      items: [
+        { label: "Sheet", value: result.sheetName || "" },
+        { label: "Rows deleted", value: alreadyCleared ? "0" : String(result.removedRows || "") },
+      ],
+    });
+  }
+
+  function openSubmitConfirm() {
+    if (!elements.confirmOverlay) return;
+    updateSubmitConfirmMessage();
+    elements.confirmOverlay.hidden = false;
+    setConfirmButtonsBusy(false);
+    elements.confirmYes?.focus();
+  }
+
+  function openActionConfirm({ kind, title, message, yesLabel, onConfirm, showNotes = false }) {
+    if (!elements.actionConfirmOverlay || !elements.actionConfirmDialog) return;
+    state.pendingActionConfirm = { onConfirm, kind, showNotes };
+    elements.actionConfirmOverlay.hidden = false;
+    elements.actionConfirmDialog.dataset.actionKind = kind || "approve";
+    elements.actionConfirmDialog.setAttribute(
+      "aria-describedby",
+      showNotes ? "actionConfirmMessage actionConfirmNotesLabel" : "actionConfirmMessage"
+    );
+    if (elements.actionConfirmIcon) {
+      elements.actionConfirmIcon.dataset.actionKind = kind || "approve";
+    }
+    if (elements.actionConfirmTitle) elements.actionConfirmTitle.textContent = title || "Are you sure?";
+    if (elements.actionConfirmMessage) elements.actionConfirmMessage.textContent = message || "Please confirm this action.";
+    if (elements.actionConfirmNotesLabel) {
+      elements.actionConfirmNotesLabel.hidden = !showNotes;
+    }
+    if (elements.actionConfirmNotes) {
+      elements.actionConfirmNotes.value = "";
+    }
+    if (elements.actionConfirmYes) {
+      elements.actionConfirmYes.querySelector("span")?.replaceChildren(document.createTextNode(yesLabel || "Yes"));
+    }
+    setActionConfirmButtonsBusy(false);
+    window.requestAnimationFrame(() => {
+      if (showNotes && elements.actionConfirmNotes) {
+        elements.actionConfirmNotes.focus();
+      } else {
+        elements.actionConfirmYes?.focus();
+      }
+    });
+  }
+
+  function closeActionConfirm(options = {}) {
+    if (!elements.actionConfirmOverlay || elements.actionConfirmOverlay.hidden) return;
+    elements.actionConfirmOverlay.hidden = true;
+    if (!options.preserveAction) {
+      state.pendingActionConfirm = null;
+    }
+    if (elements.actionConfirmNotes) {
+      elements.actionConfirmNotes.value = "";
+    }
+    if (elements.actionConfirmNotesLabel) {
+      elements.actionConfirmNotesLabel.hidden = true;
+    }
+    setActionConfirmButtonsBusy(false);
+  }
 
     function updateSubmitConfirmMessage() {
       if (!elements.confirmMessage) return;

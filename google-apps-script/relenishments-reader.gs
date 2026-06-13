@@ -2,6 +2,46 @@
 const ALLOWED_SHEETS = ["USD", "EURO", "Yuan", "AED", "JOD", "INR", "SAR"];
 const DRIVE_UPLOAD_ROOT_FOLDER_ID = "1I29dTj90DL6xxwvJvomw2MWPP3MTvPEZ";
 const MASTER_CACHE_SPREADSHEET_ID = "";
+const REPLENISHMENT_DECISION_SHEET_ID = 1310756664;
+const DECISION_BANK_DISPLAY_MAP = {
+  "Abu Dhabi Bank": "بنك أبوظبي",
+  "Mansour Bank": "مصرف المنصور",
+  "National Bank of Iraq": "البنك الوطني العراقي",
+  "Baghdad Bank": "بنك بغداد",
+  "Trade Bank of Iraq": "المصرف العراقي للتجارة",
+  "Standard Chartered": "ستاندرد تشارترد",
+  "Credit bank": "بنك كريديت",
+  "Commercial Islamic Bank": "المصرف التجاري الإسلامي",
+  "Etihad": "الاتحاد",
+  "Bank of Jordan": "بنك الأردن",
+  "Iraqi Islamic Bank": "المصرف العراقي الإسلامي",
+  "Arab Bank": "البنك العربي",
+  "Cihan Bank": "بنك جيهان",
+  BBAC: "بي بي إيه سي",
+  "Byblos Bank": "بنك بيبلوس",
+  "Al-Mashreq Al-Arabi Bank": "بنك المشرق العربي",
+  "Economy Bank": "بنك الاقتصاد",
+  "Albaraka Turk Participation Bank": "بنك البركة ترك للمشاركة",
+  "Is Bank": "بنك إيش",
+  "Ziraat Bankasi Bank": "بنك زراعات",
+  "Region Trade Bank": "مصرف تجارة المنطقة",
+  "Ameen Al-Iraq Bank": "مصرف أمين العراق",
+  "Gulf Commercial Bank": "مصرف الخليج التجاري",
+  "International Development Bank": "مصرف التنمية الدولية",
+  "National Islamic Bank": "المصرف الإسلامي الوطني",
+  "Al Nasik Islamic Bank": "مصرف الناسك الإسلامي",
+  "First Iraqi Bank": "المصرف العراقي الأول",
+  "ziraat Bankasi Bank": "بنك زراعات",
+};
+const DECISION_CURRENCY_DISPLAY_MAP = {
+  USD: "الدولار الأمريكي",
+  EURO: "اليورو",
+  Yuan: "اليوان الصيني",
+  AED: "الدرهم الإماراتي",
+  JOD: "الدينار الأردني",
+  INR: "الروبية الهندية",
+  SAR: "الريال السعودي",
+};
 
 function doGet(event) {
   const params = (event && event.parameter) || {};
@@ -14,6 +54,12 @@ function doGet(event) {
     }
     if (action === "duplicateReplenishment") {
       return respond_(findDuplicateReplenishment_(params), callback);
+    }
+    if (action === "recordReplenishmentDecision") {
+      return respond_(recordReplenishmentDecision_(params), callback);
+    }
+    if (action === "resetReplenishmentSheet") {
+      return respond_(resetReplenishmentSheet_(params), callback);
     }
 
     const sheetName = String(params.sheet || params.currency || "").trim();
@@ -240,6 +286,15 @@ function doPost(event) {
     }
     if (action === "calculateReplenishment") {
       return respond_(calculateReplenishment_(payload), "");
+    }
+    if (action === "recordReplenishmentDecision") {
+      return respond_(recordReplenishmentDecision_(payload), "");
+    }
+    if (action === "updateEndOfDayReport") {
+      return respond_(updateEndOfDayReport_(payload), "");
+    }
+    if (action === "resetReplenishmentSheet") {
+      return respond_(resetReplenishmentSheet_(payload), "");
     }
     if (action !== "appendReplenishment") {
       throw new Error("Unsupported action.");
@@ -2413,6 +2468,765 @@ function appendReplenishment_(payload) {
     sheet: sheetName,
     row: targetRow,
   };
+}
+
+function recordReplenishmentDecision_(payload) {
+  const decision = String(payload.decision || "").trim().toLowerCase();
+  if (decision !== "approve" && decision !== "reject") {
+    throw new Error("Missing decision.");
+  }
+
+  const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheet = getSheetById_(spreadsheet, REPLENISHMENT_DECISION_SHEET_ID);
+  if (!sheet) throw new Error("Replenishment decision sheet not found.");
+
+  const bank = requiredValue_(payload.bank, "Bank");
+  const amount = requiredValue_(payload.amount, "Amount");
+  const currency = requiredValue_(payload.currency, "Currency");
+  const correspondentBank = requiredValue_(payload.correspondentBank, "Correspondent Bank");
+  const eightyCoverage = normalizeDecisionCoverage_(requiredValue_(payload.eightyCoverage, "80% Coverage"));
+  const hundredCoverage = normalizeDecisionCoverage_(requiredValue_(payload.hundredCoverage, "100% Coverage"));
+  const notes = String(payload.notes || "").trim();
+  const status = decision === "approve" ? "مقبول" : "مرفوض";
+  const bankForSheet = formatDecisionBankForSheet_(bank);
+  const currencyForSheet = formatDecisionCurrencyForSheet_(currency);
+
+  const layout = getDecisionSheetLayout_(sheet);
+  const duplicate = findDuplicateDecisionRow_(
+    sheet,
+    layout.dataStartRow,
+    layout.footerStartRow,
+    {
+      bank: bankForSheet,
+      amount: amount,
+      currency: currencyForSheet,
+      correspondentBank: correspondentBank,
+      eightyCoverage: eightyCoverage,
+      hundredCoverage: hundredCoverage,
+      status: status,
+    }
+  );
+  if (duplicate) {
+    return {
+      ok: true,
+      source: "apps-script-record-decision",
+      duplicate: true,
+      sheetId: sheet.getSheetId(),
+      sheetName: sheet.getName(),
+      row: duplicate.row,
+      sequenceNumber: duplicate.sequenceNumber,
+      status: status,
+      message: "This decision already exists in the sheet.",
+    };
+  }
+
+  const targetRow = findFirstDecisionInsertionRow_(sheet, layout.dataStartRow, layout.footerStartRow, 9);
+  const writeRow = targetRow < layout.footerStartRow ? targetRow : layout.footerStartRow;
+  if (writeRow === layout.footerStartRow) {
+    sheet.insertRowBefore(writeRow);
+  }
+
+  const sequenceNumber = findNextDecisionSequence_(sheet, layout.dataStartRow, writeRow);
+  const amountNumber = parseDecisionAmount_(amount);
+  const row = [
+    sequenceNumber,
+    bankForSheet,
+    currencyForSheet,
+    Number.isFinite(amountNumber) ? amountNumber : amount,
+    correspondentBank,
+    eightyCoverage,
+    hundredCoverage,
+    status,
+    notes,
+  ];
+
+  sheet.getRange(writeRow, 1, 1, 9).setValues([row]);
+  sheet.getRange(writeRow, 1, 1, 9).setBackground("#ffffff");
+  if (Number.isFinite(amountNumber)) {
+    sheet.getRange(writeRow, 4).setNumberFormat('"$" #,##0');
+  }
+  sheet
+    .getRange(writeRow, 1, 1, 9)
+    .setBorder(true, true, true, true, true, true, "#000000", SpreadsheetApp.BorderStyle.SOLID);
+
+  return {
+    ok: true,
+    source: "apps-script-record-decision",
+    sheetId: sheet.getSheetId(),
+    sheetName: sheet.getName(),
+    row: writeRow,
+    sequenceNumber: sequenceNumber,
+    decision: decision,
+    status: status,
+  };
+}
+
+function updateEndOfDayReport_(payload) {
+  const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheet = getSheetById_(spreadsheet, REPLENISHMENT_DECISION_SHEET_ID);
+  if (!sheet) throw new Error("Replenishment decision sheet not found.");
+
+  const reportRange = sheet.getRange("B4:H4");
+  const currentText = String(reportRange.getValue() || "").trim();
+  if (!currentText) {
+    throw new Error("End-of-day report text was not found.");
+  }
+
+  const timeZone = Session.getScriptTimeZone();
+  const todayText = Utilities.formatDate(new Date(), timeZone, "yyyy/M/d");
+  const datePattern = /\b\d{4}\/\d{1,2}\/\d{1,2}\b/g;
+  let updatedText = currentText.replace(datePattern, todayText);
+  const alreadyCurrent = updatedText === currentText;
+
+  if (!alreadyCurrent) {
+    if (!datePattern.test(updatedText) && updatedText.indexOf("الموافق") >= 0) {
+      updatedText = updatedText.replace(/(الموافق\s*)/, "$1" + todayText);
+    }
+    reportRange.setValue(updatedText);
+  }
+
+  const totalSummary = calculateApprovedEndOfDayTotal_(sheet);
+  const entrySummary = calculateEndOfDayEntryCount_(sheet);
+  const totalTarget = findEndOfDayTotalTargetRange_(sheet);
+  const totalWordsTarget = findEndOfDayAmountWordsTargetRange_(sheet);
+  const entryCountTarget = findEndOfDayEntryCountTargetRange_(sheet);
+  const totalWords = formatArabicCurrencyWords_(totalSummary.totalAmount);
+  let totalUpdated = false;
+  let totalWordsUpdated = false;
+  let entryCountUpdated = false;
+  let totalRangeAddress = "";
+  let totalWordsRangeAddress = "";
+  let entryCountRangeAddress = "";
+  if (totalTarget) {
+    totalTarget.setValue(totalSummary.totalAmount);
+    totalTarget.setNumberFormat('"$" #,##0');
+    totalUpdated = true;
+    totalRangeAddress = totalTarget.getA1Notation();
+  }
+  if (totalWordsTarget) {
+    totalWordsTarget.setValue(totalWords);
+    totalWordsUpdated = true;
+    totalWordsRangeAddress = totalWordsTarget.getA1Notation();
+  }
+  if (entryCountTarget) {
+    entryCountTarget.setValue(entrySummary.totalEntries);
+    entryCountUpdated = true;
+    entryCountRangeAddress = entryCountTarget.getA1Notation();
+  }
+
+  return {
+    ok: true,
+    source: "apps-script-update-end-of-day-report",
+    sheetId: sheet.getSheetId(),
+    sheetName: sheet.getName(),
+    range: "B4:H4",
+    previousText: currentText,
+    currentText: alreadyCurrent ? currentText : updatedText,
+    today: todayText,
+    totalAmount: totalSummary.totalAmount,
+    totalRows: totalSummary.approvedRows,
+    totalEntries: entrySummary.totalEntries,
+    totalRange: totalRangeAddress,
+    totalWords,
+    totalWordsRange: totalWordsRangeAddress,
+    entryCountRange: entryCountRangeAddress,
+    alreadyCurrent: alreadyCurrent,
+    updated: !alreadyCurrent || totalUpdated || totalWordsUpdated || entryCountUpdated,
+  };
+}
+
+function calculateApprovedEndOfDayTotal_(sheet) {
+  const layout = getDecisionSheetLayout_(sheet);
+  if (layout.footerStartRow <= layout.dataStartRow) {
+    return { totalAmount: 0, approvedRows: 0 };
+  }
+
+  const values = sheet.getRange(layout.dataStartRow, 1, layout.footerStartRow - layout.dataStartRow, 9).getDisplayValues();
+  let totalAmount = 0;
+  let approvedRows = 0;
+
+  for (let index = 0; index < values.length; index += 1) {
+    const row = values[index];
+    if (!row.some(function (value) {
+      return String(value || "").trim() !== "";
+    })) {
+      continue;
+    }
+    if (isDecisionFooterStartRow_(row)) {
+      continue;
+    }
+    if (!isApprovedDecisionStatus_(row[7])) {
+      continue;
+    }
+
+    const amount = parseDecisionAmount_(row[3]);
+    if (!Number.isFinite(amount)) continue;
+
+    approvedRows += 1;
+    totalAmount += amount;
+  }
+
+  return {
+    totalAmount: roundCurrencyAmount_(totalAmount),
+    approvedRows: approvedRows,
+  };
+}
+
+function calculateEndOfDayEntryCount_(sheet) {
+  const layout = getDecisionSheetLayout_(sheet);
+  if (layout.footerStartRow <= layout.dataStartRow) {
+    return { totalEntries: 0 };
+  }
+
+  const values = sheet.getRange(layout.dataStartRow, 1, layout.footerStartRow - layout.dataStartRow, 9).getDisplayValues();
+  let totalEntries = 0;
+
+  for (let index = 0; index < values.length; index += 1) {
+    const row = values[index];
+    if (!row.some(function (value) {
+      return String(value || "").trim() !== "";
+    })) {
+      continue;
+    }
+    if (isDecisionFooterStartRow_(row)) {
+      continue;
+    }
+    totalEntries += 1;
+  }
+
+  return { totalEntries: totalEntries };
+}
+
+function isApprovedDecisionStatus_(value) {
+  const normalized = normalizeHeader_(value);
+  return normalized === normalizeHeader_("مقبول") || normalized === "approved";
+}
+
+function findEndOfDayTotalTargetRange_(sheet) {
+  const labelText = "اجمالي المبالغ المعززة لهذا اليوم";
+  const finder = sheet.createTextFinder(labelText).matchCase(false);
+  const labelCell = finder.findNext();
+  if (!labelCell) return null;
+
+  const row = labelCell.getRow();
+  const rowRanges = sheet.getRange(row, 1, 1, sheet.getLastColumn()).getMergedRanges();
+  if (!rowRanges.length) return null;
+
+  rowRanges.sort(function (left, right) {
+    return left.getColumn() - right.getColumn();
+  });
+
+  const labelRange = rowRanges.find(function (range) {
+    return range.getRow() === labelCell.getRow() &&
+      range.getColumn() <= labelCell.getColumn() &&
+      range.getLastColumn() >= labelCell.getColumn();
+  }) || labelCell;
+
+  let targetRange = null;
+  for (let index = rowRanges.length - 1; index >= 0; index -= 1) {
+    const range = rowRanges[index];
+    if (range.getLastColumn() < labelRange.getColumn()) {
+      targetRange = range;
+      break;
+    }
+  }
+
+  if (!targetRange) {
+    for (let index = 0; index < rowRanges.length; index += 1) {
+      const range = rowRanges[index];
+      if (range.getColumn() > labelRange.getLastColumn()) {
+        targetRange = range;
+        break;
+      }
+    }
+  }
+
+  return targetRange;
+}
+
+function findEndOfDayAmountWordsTargetRange_(sheet) {
+  const exactLabels = ["فقط لاغير", "فقط لا غير"];
+  for (let index = 0; index < exactLabels.length; index += 1) {
+    const finder = sheet.createTextFinder(exactLabels[index]).matchCase(false);
+    const cell = finder.findNext();
+    if (!cell) continue;
+
+    const mergedRange = findMergedRangeContainingCell_(sheet, cell);
+    if (mergedRange) return mergedRange;
+    return cell;
+  }
+
+  const labelFinder = sheet.createTextFinder("اجمالي المبالغ المعززة لهذا اليوم").matchCase(false);
+  const labelCell = labelFinder.findNext();
+  if (!labelCell) return null;
+
+  const row = labelCell.getRow();
+  const rowRanges = sheet.getRange(row, 1, 1, sheet.getLastColumn()).getMergedRanges();
+  if (!rowRanges.length) return null;
+
+  rowRanges.sort(function (left, right) {
+    return left.getColumn() - right.getColumn();
+  });
+
+  for (let index = 0; index < rowRanges.length; index += 1) {
+    const range = rowRanges[index];
+    if (range.getRow() !== labelCell.getRow()) continue;
+    if (range.getColumn() <= labelCell.getColumn() && range.getLastColumn() >= labelCell.getColumn()) continue;
+    return range;
+  }
+
+  return null;
+}
+
+function findEndOfDayEntryCountTargetRange_(sheet) {
+  const labelText = "عدد المصارف التي قامت بتقديم طلبات تعزيز الأرصدة في الخارج";
+  const finder = sheet.createTextFinder(labelText).matchCase(false);
+  const labelCell = finder.findNext();
+  if (!labelCell) return null;
+
+  const mergedRange = findMergedRangeContainingCell_(sheet, labelCell);
+  if (!mergedRange) return labelCell;
+
+  const row = labelCell.getRow();
+  const rowRanges = sheet.getRange(row, 1, 1, sheet.getLastColumn()).getMergedRanges();
+  rowRanges.sort(function (left, right) {
+    return left.getColumn() - right.getColumn();
+  });
+
+  const labelRange = rowRanges.find(function (range) {
+    return range.getRow() === labelCell.getRow() &&
+      range.getColumn() <= labelCell.getColumn() &&
+      range.getLastColumn() >= labelCell.getColumn();
+  }) || mergedRange;
+
+  for (let index = 0; index < rowRanges.length; index += 1) {
+    const range = rowRanges[index];
+    if (range.getColumn() > labelRange.getLastColumn()) {
+      return range;
+    }
+  }
+
+  for (let index = rowRanges.length - 1; index >= 0; index -= 1) {
+    const range = rowRanges[index];
+    if (range.getLastColumn() < labelRange.getColumn()) {
+      return range;
+    }
+  }
+
+  return null;
+}
+
+function findMergedRangeContainingCell_(sheet, cell) {
+  const mergedRanges = sheet.getRange(cell.getRow(), 1, 1, sheet.getLastColumn()).getMergedRanges();
+  for (let index = 0; index < mergedRanges.length; index += 1) {
+    const range = mergedRanges[index];
+    if (
+      range.getRow() === cell.getRow() &&
+      range.getColumn() <= cell.getColumn() &&
+      range.getLastColumn() >= cell.getColumn()
+    ) {
+      return range;
+    }
+  }
+  return null;
+}
+
+function formatArabicCurrencyWords_(amount) {
+  const rounded = Math.max(0, Math.floor(Number(amount) || 0));
+  if (!rounded) return "صفر دولار فقط لا غير";
+
+  const words = numberToArabicWords_(rounded);
+  return words + " دولار فقط لا غير";
+}
+
+function numberToArabicWords_(value) {
+  const number = Math.max(0, Math.floor(Number(value) || 0));
+  if (number === 0) return "صفر";
+
+  const scales = [
+    { value: 1000000000, singular: "مليارًا", dual: "ملياران", plural: "مليارات" },
+    { value: 1000000, singular: "مليونًا", dual: "مليونان", plural: "ملايين" },
+    { value: 1000, singular: "ألفًا", dual: "ألفان", plural: "آلاف" },
+  ];
+
+  const parts = [];
+  let remainder = number;
+
+  for (let index = 0; index < scales.length; index += 1) {
+    const scale = scales[index];
+    const count = Math.floor(remainder / scale.value);
+    if (!count) continue;
+
+    parts.push(formatArabicScaleGroup_(count, scale));
+
+    remainder %= scale.value;
+  }
+
+  if (remainder) {
+    parts.push(tripletToArabicWords_(remainder));
+  }
+
+  return parts.join(" و ");
+}
+
+function formatArabicScaleGroup_(count, scale) {
+  if (count === 1) return scale.singular;
+  if (count === 2) return scale.dual;
+  if (count >= 3 && count <= 10) {
+    return arabicCountForPluralNoun_(count) + " " + scale.plural;
+  }
+  return tripletToArabicWords_(count) + " " + scale.singular;
+}
+
+function arabicCountForPluralNoun_(value) {
+  const number = Math.max(0, Math.floor(Number(value) || 0));
+  const ones = ["", "ثلاثة", "أربعة", "خمسة", "ستة", "سبعة", "ثمانية", "تسعة", "عشرة"];
+  if (number >= 3 && number <= 10) return ones[number - 2];
+  return tripletToArabicWords_(number);
+}
+
+function tripletToArabicWords_(value) {
+  const number = Math.max(0, Math.floor(Number(value) || 0));
+  if (number === 0) return "";
+
+  const ones = ["", "واحد", "اثنان", "ثلاثة", "أربعة", "خمسة", "ستة", "سبعة", "ثمانية", "تسعة"];
+  const tens = ["", "", "عشرون", "ثلاثون", "أربعون", "خمسون", "ستون", "سبعون", "ثمانون", "تسعون"];
+  const hundredsWords = {
+    1: "مائة",
+    2: "مائتان",
+    3: "ثلاثمائة",
+    4: "أربعمائة",
+    5: "خمسمائة",
+    6: "ستمائة",
+    7: "سبعمائة",
+    8: "ثمانمائة",
+    9: "تسعمائة",
+  };
+  const teens = {
+    11: "أحد عشر",
+    12: "اثنا عشر",
+    13: "ثلاثة عشر",
+    14: "أربعة عشر",
+    15: "خمسة عشر",
+    16: "ستة عشر",
+    17: "سبعة عشر",
+    18: "ثمانية عشر",
+    19: "تسعة عشر",
+  };
+
+  const parts = [];
+  const hundreds = Math.floor(number / 100);
+  const remainder = number % 100;
+
+  if (hundreds) {
+    parts.push(hundredsWords[hundreds] || "");
+  }
+
+  if (remainder) {
+    if (remainder >= 11 && remainder <= 19) {
+      parts.push(teens[remainder]);
+    } else if (remainder === 10) {
+      parts.push("عشرة");
+    } else if (remainder < 10) {
+      parts.push(ones[remainder]);
+    } else {
+      const tenValue = Math.floor(remainder / 10);
+      const oneValue = remainder % 10;
+      if (oneValue) {
+        parts.push(ones[oneValue] + " و " + tens[tenValue]);
+      } else {
+        parts.push(tens[tenValue]);
+      }
+    }
+  }
+
+  return parts.join(" و ");
+}
+
+function findDuplicateDecisionRow_(sheet, dataStartRow, footerStartRow, candidate) {
+  if (footerStartRow <= dataStartRow) return null;
+
+  const values = sheet.getRange(dataStartRow, 1, footerStartRow - dataStartRow, 9).getDisplayValues();
+  const normalizedCandidate = {
+    bank: normalizeDecisionBankComparable_(candidate.bank),
+    amount: normalizeDecisionAmountComparable_(candidate.amount),
+    currency: normalizeDecisionCurrencyComparable_(candidate.currency),
+    correspondentBank: normalizeComparable_(candidate.correspondentBank),
+    eightyCoverage: normalizeDecisionCoverageComparable_(candidate.eightyCoverage),
+    hundredCoverage: normalizeDecisionCoverageComparable_(candidate.hundredCoverage),
+    status: normalizeComparable_(candidate.status),
+  };
+
+  for (let index = 0; index < values.length; index += 1) {
+    const row = values[index];
+    if (!row.some(function (value) {
+      return String(value || "").trim() !== "";
+    })) {
+      continue;
+    }
+    if (isDecisionFooterStartRow_(row)) {
+      continue;
+    }
+
+    const normalizedRow = {
+      bank: normalizeDecisionBankComparable_(row[1]),
+      amount: normalizeDecisionAmountComparable_(row[3]),
+      currency: normalizeDecisionCurrencyComparable_(row[2]),
+      correspondentBank: normalizeComparable_(row[4]),
+      eightyCoverage: normalizeDecisionCoverageComparable_(row[5]),
+      hundredCoverage: normalizeDecisionCoverageComparable_(row[6]),
+      status: normalizeComparable_(row[7]),
+    };
+
+    if (
+      normalizedRow.bank === normalizedCandidate.bank &&
+      normalizedRow.amount === normalizedCandidate.amount &&
+      normalizedRow.currency === normalizedCandidate.currency &&
+      normalizedRow.correspondentBank === normalizedCandidate.correspondentBank &&
+      normalizedRow.eightyCoverage === normalizedCandidate.eightyCoverage &&
+      normalizedRow.hundredCoverage === normalizedCandidate.hundredCoverage &&
+      normalizedRow.status === normalizedCandidate.status
+    ) {
+      return {
+        row: dataStartRow + index,
+        sequenceNumber: parseInteger_(row[0]) || (index + 1),
+      };
+    }
+  }
+
+  return null;
+}
+
+function resetReplenishmentSheet_(payload) {
+  const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheet = getSheetById_(spreadsheet, REPLENISHMENT_DECISION_SHEET_ID);
+  if (!sheet) throw new Error("Replenishment decision sheet not found.");
+
+  const layout = getDecisionSheetLayout_(sheet);
+  if (layout.footerStartRow <= layout.dataStartRow) {
+    return {
+      ok: true,
+      source: "apps-script-reset-decision-sheet",
+      sheetId: sheet.getSheetId(),
+      sheetName: sheet.getName(),
+      removedRows: 0,
+      alreadyCleared: true,
+      templateRow: layout.dataStartRow,
+    };
+  }
+
+  const dataRowCount = Math.max(layout.footerStartRow - layout.dataStartRow, 0);
+  const dataRows = dataRowCount > 0 ? sheet.getRange(layout.dataStartRow, 1, dataRowCount, 9).getDisplayValues() : [];
+  const rowsToDelete = [];
+
+  for (let index = 0; index < dataRows.length; index += 1) {
+    const row = dataRows[index];
+    if (!row.some(function (value) {
+      return String(value || "").trim() !== "";
+    })) {
+      continue;
+    }
+    if (isDecisionFooterStartRow_(row)) {
+      continue;
+    }
+    rowsToDelete.push(layout.dataStartRow + index);
+  }
+
+  for (let index = rowsToDelete.length - 1; index >= 0; index -= 1) {
+    sheet.deleteRow(rowsToDelete[index]);
+  }
+
+  return {
+    ok: true,
+    source: "apps-script-reset-decision-sheet",
+    sheetId: sheet.getSheetId(),
+    sheetName: sheet.getName(),
+    removedRows: rowsToDelete.length,
+    alreadyCleared: rowsToDelete.length === 0,
+    templateRow: layout.dataStartRow,
+  };
+}
+
+function getDecisionSheetLayout_(sheet) {
+  const lastRow = Math.max(sheet.getLastRow(), 1);
+  const values = sheet.getRange(1, 1, lastRow, 9).getDisplayValues();
+  let headerRow = -1;
+
+  for (let rowIndex = 0; rowIndex < values.length; rowIndex += 1) {
+    const row = values[rowIndex];
+    const left = normalizeComparable_(row[0]);
+    const bankHeader = normalizeComparable_(row[1]);
+    if (left === "ت" || bankHeader === "أسم المصرف" || bankHeader === "اسم المصرف") {
+      headerRow = rowIndex + 1;
+      break;
+    }
+  }
+
+  if (headerRow < 0) {
+    throw new Error("Replenishment decision header was not found.");
+  }
+
+  let dataStartRow = headerRow + 2;
+  for (let rowIndex = headerRow; rowIndex < values.length; rowIndex += 1) {
+    if (parseInteger_(values[rowIndex][0]) > 0) {
+      dataStartRow = rowIndex + 1;
+      break;
+    }
+  }
+
+  let footerStartRow = lastRow + 1;
+  for (let rowIndex = dataStartRow - 1; rowIndex < values.length; rowIndex += 1) {
+    if (isDecisionFooterStartRow_(values[rowIndex])) {
+      footerStartRow = rowIndex + 1;
+      break;
+    }
+  }
+
+  return {
+    headerRow: headerRow,
+    dataStartRow: dataStartRow,
+    footerStartRow: footerStartRow,
+  };
+}
+
+function isDecisionFooterStartRow_(row) {
+  const firstCell = normalizeComparable_(row[0]);
+  const hasVisibleContent = row.slice(1).some(function (value) {
+    return String(value || "").trim() !== "";
+  });
+  if (firstCell !== "" && parseInteger_(firstCell) > 0) return false;
+  if (!hasVisibleContent) return false;
+
+  const text = row.map(function (value) {
+    return normalizeComparable_(value);
+  }).join(" | ");
+  const normalizedText = normalizeHeader_(text);
+
+  return (
+    normalizedText.indexOf("اجمالي المبالغ") >= 0 ||
+    normalizedText.indexOf("اجمالي المبالغ المعززه لهذا اليوم") >= 0 ||
+    normalizedText.indexOf("عدد المصارف") >= 0 ||
+    normalizedText.indexOf("مسؤول الشعبه") >= 0 ||
+    normalizedText.indexOf("مسؤول الشعبة") >= 0 ||
+    normalizedText.indexOf("السيد المدير العام") >= 0
+  );
+}
+
+function findFirstDecisionInsertionRow_(sheet, dataStartRow, footerStartRow, width) {
+  if (footerStartRow <= dataStartRow) return dataStartRow;
+
+  const rows = sheet.getRange(dataStartRow, 1, footerStartRow - dataStartRow, width).getDisplayValues();
+  for (let index = 0; index < rows.length; index += 1) {
+    const row = rows[index];
+    if (row.every(function (value) {
+      return String(value || "").trim() === "";
+    })) {
+      return dataStartRow + index;
+    }
+  }
+
+  return footerStartRow;
+}
+
+function findNextDecisionSequence_(sheet, dataStartRow, insertionRow) {
+  const endRow = Math.max(insertionRow - 1, dataStartRow - 1);
+  if (endRow < dataStartRow) return 1;
+
+  const values = sheet.getRange(dataStartRow, 1, endRow - dataStartRow + 1, 1).getDisplayValues();
+  let maxSequence = 0;
+  for (let index = 0; index < values.length; index += 1) {
+    const text = String(values[index][0] || "").trim();
+    const sequence = parseInteger_(text);
+    if (sequence > maxSequence) {
+      maxSequence = sequence;
+    }
+  }
+
+  return maxSequence + 1;
+}
+
+function parseDecisionAmount_(value) {
+  const normalized = normalizeSheetAmount_(value);
+  if (!normalized) return NaN;
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : NaN;
+}
+
+function normalizeDecisionCoverage_(value) {
+  const text = String(value || "").trim().replace(/%/g, "");
+  return text;
+}
+
+function normalizeDecisionCoverageComparable_(value) {
+  return normalizeComparable_(normalizeDecisionCoverage_(value));
+}
+
+function normalizeDecisionAmountComparable_(value) {
+  const amount = parseDecisionAmount_(value);
+  if (Number.isFinite(amount)) {
+    return String(amount);
+  }
+  return normalizeComparable_(value);
+}
+
+function normalizeDecisionBankComparable_(value) {
+  return normalizeDecisionDisplayComparable_(value, DECISION_BANK_DISPLAY_MAP, "iraqi islamic bank");
+}
+
+function normalizeDecisionCurrencyComparable_(value) {
+  return normalizeDecisionDisplayComparable_(value, DECISION_CURRENCY_DISPLAY_MAP, "jod");
+}
+
+function formatDecisionBankForSheet_(value) {
+  return formatDecisionDisplayForSheet_(value, DECISION_BANK_DISPLAY_MAP);
+}
+
+function formatDecisionCurrencyForSheet_(value) {
+  return formatDecisionDisplayForSheet_(value, DECISION_CURRENCY_DISPLAY_MAP);
+}
+
+function normalizeDecisionDisplayComparable_(value, displayMap, fallbackKey) {
+  const normalized = normalizeHeader_(value);
+  if (!normalized) return "";
+
+  const keys = Object.keys(displayMap);
+  for (let index = 0; index < keys.length; index += 1) {
+    const key = keys[index];
+    if (normalized === normalizeHeader_(key) || normalized === normalizeHeader_(displayMap[key])) {
+      return normalizeComparable_(key);
+    }
+  }
+
+  if (fallbackKey && normalized === normalizeHeader_(fallbackKey)) {
+    return normalizeComparable_(fallbackKey);
+  }
+
+  return normalizeComparable_(value);
+}
+
+function formatDecisionDisplayForSheet_(value, displayMap) {
+  const normalized = normalizeHeader_(value);
+  if (!normalized) return String(value || "").trim();
+
+  const keys = Object.keys(displayMap);
+  for (let index = 0; index < keys.length; index += 1) {
+    const key = keys[index];
+    if (normalized === normalizeHeader_(key) || normalized === normalizeHeader_(displayMap[key])) {
+      return displayMap[key];
+    }
+  }
+
+  return String(value || "").trim();
+}
+
+function getSheetById_(spreadsheet, sheetId) {
+  const sheets = spreadsheet.getSheets();
+  for (let index = 0; index < sheets.length; index += 1) {
+    if (sheets[index].getSheetId() === sheetId) {
+      return sheets[index];
+    }
+  }
+  return null;
 }
 
 function findDuplicateReference_(sheet, bankColumn, referenceColumn, bankName, referenceNumber) {
